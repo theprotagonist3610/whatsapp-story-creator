@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  /* Couleurs de marque — Les Sandwichs du Docteur */
+  --color-brand-cream: #ffe8c9;
+  --color-brand-red: #a41624;
+  --color-brand-yellow: #ffb564;
+  --color-brand-orange: #d9571d;
+
+  /* Couleurs WhatsApp */
+  --color-wa-header: #075e54;
+  --color-wa-header-dark: #054c44;
+  --color-wa-green: #25d366;
+  --color-wa-green-light: #dcf8c6;
+  --color-wa-bg: #e5ddd5;
+  --color-wa-bubble-in: #ffffff;
+  --color-wa-tick-blue: #4fc3f7;
+  --color-wa-search: #f0f2f5;
+  --color-wa-tab-active: #ffffff;
+  --color-wa-tab-inactive: rgba(255, 255, 255, 0.7);
+
+  /* Typographie */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: #f3f4f6;
+}
