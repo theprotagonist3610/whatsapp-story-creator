@@ -15,6 +15,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "^2.102.1",
     "html-to-image": "^1.11.13",
     "lucide-react": "^1.7.0",

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@200;300;400;500&display=swap');
 
 @theme {
   /* Couleurs de marque — Les Sandwichs du Docteur */

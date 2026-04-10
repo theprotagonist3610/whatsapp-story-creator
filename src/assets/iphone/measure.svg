@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" id="measure">
+  <defs>
+    <clipPath id="a">
+      <rect width="120" height="120" fill="none" rx="26"></rect>
+    </clipPath>
+  </defs>
+  <rect width="120" height="120" fill="#1a1a1b" rx="26"></rect>
+  <g clip-path="url(#a)">
+    <path fill="#232323" d="M0 21h120v78H0z"></path>
+  </g>
+  <path fill="#fff" d="M6.99 26.95h2v19h-2z"></path>
+  <path fill="#fc0" d="M12.99 58.95h3v2h-3zM18.99 58.95h3v2h-3zM24.99 58.95h3v2h-3zM30.99 58.95h3v2h-3zM36.99 58.95h3v2h-3zM42.99 58.95h3v2h-3zM48.99 58.95h3v2h-3zM54.99 58.95h3v2h-3zM60.99 58.95h3v2h-3zM66.99 58.95h3v2h-3zM72.99 58.95h3v2h-3zM78.99 58.95h3v2h-3zM84.99 58.95h3v2h-3zM90.99 58.95h3v2h-3zM96.99 58.95h3v2h-3zM102.99 58.95h3v2h-3z"></path>
+  <path fill="#fff" d="M14.99 26.95h2v6h-2zM23.99 26.95h2v10h-2zM32.99 26.95h2v6h-2zM41.99 26.95h2v9h-2zM50.99 26.95h2v6h-2zM58.99 26.95h2v9h-2zM66.99 26.95h2v6h-2zM75.99 26.95h2v15h-2zM83.99 26.95h2v6h-2zM91.99 26.95h2v9h-2zM100.99 26.95h2v6h-2zM109.99 26.95h2v9h-2zM112.99 80.95h2v12h-2zM101.99 86.95h2v6h-2zM106.99 86.95h2v6h-2zM91.99 86.95h2v6h-2zM96.99 86.95h2v6h-2zM79.99 86.95h2v6h-2zM74.99 86.95h2v6h-2zM85.99 74.95h2v18h-2zM64.99 86.95h2v6h-2zM69.99 86.95h2v6h-2zM58.99 80.95h2v12h-2zM47.99 86.95h2v6h-2zM37.99 86.95h2v6h-2zM42.99 86.95h2v6h-2zM52.99 86.95h2v6h-2zM31.99 74.95h2v18h-2zM15.99 86.95h2v6h-2zM20.99 86.95h2v6h-2zM25.99 86.95h2v6h-2zM10.99 86.95h2v6h-2zM4.99 80.95h2v12h-2z"></path>
+  <circle cx="111.99" cy="59.95" r="4" fill="#fc0"></circle>
+  <circle cx="7" cy="59.95" r="4" fill="#fc0"></circle>
+</svg>
