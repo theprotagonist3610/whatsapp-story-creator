@@ -81,11 +81,29 @@ export async function getCharacters() {
   return data
 }
 
-export async function createCharacter({ name, bubbleColor, avatarUrl }) {
+export async function createCharacter({ name, bubbleColor, avatarUrl, gender = 'autre', followers = 0 }) {
   const user = await getUser()
   const { data, error } = await supabase
     .from('characters')
-    .insert({ name, bubble_color: bubbleColor, avatar_url: avatarUrl ?? null, created_by: user.id })
+    .insert({ name, bubble_color: bubbleColor, avatar_url: avatarUrl ?? null, gender, followers, created_by: user.id })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCharacter(id, { name, bubbleColor, avatarUrl, gender, followers }) {
+  const payload = {
+    ...(name        !== undefined && { name }),
+    ...(bubbleColor !== undefined && { bubble_color: bubbleColor }),
+    ...(avatarUrl   !== undefined && { avatar_url:   avatarUrl }),
+    ...(gender      !== undefined && { gender }),
+    ...(followers   !== undefined && { followers }),
+  }
+  const { data, error } = await supabase
+    .from('characters')
+    .update(payload)
+    .eq('id', id)
     .select()
     .single()
   if (error) throw error
@@ -123,14 +141,12 @@ export async function getStory(id) {
   return data
 }
 
-export async function createStory({ title, bubbles = [], teaserBubbleIndex = 0, debrief = null, weekDate = null }) {
+export async function createStory({ title, debrief = null, weekDate = null }) {
   const user = await getUser()
   const { data, error } = await supabase
     .from('stories')
     .insert({
       title,
-      bubbles,
-      teaser_bubble_index: teaserBubbleIndex,
       debrief,
       week_date: weekDate,
       status: 'draft',
@@ -143,16 +159,25 @@ export async function createStory({ title, bubbles = [], teaserBubbleIndex = 0, 
   return data
 }
 
+export async function getStoryWorkflow(id) {
+  const { data, error } = await supabase
+    .from('stories')
+    .select('id, workflow')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data.workflow ?? { steps: [] }
+}
+
 export async function updateStory(id, updates) {
   const user = await getUser()
 
   const payload = {
-    ...(updates.title              !== undefined && { title:                updates.title }),
-    ...(updates.bubbles            !== undefined && { bubbles:              updates.bubbles }),
-    ...(updates.teaserBubbleIndex  !== undefined && { teaser_bubble_index:  updates.teaserBubbleIndex }),
-    ...(updates.debrief            !== undefined && { debrief:              updates.debrief }),
-    ...(updates.weekDate           !== undefined && { week_date:            updates.weekDate }),
-    ...(updates.status             !== undefined && { status:               updates.status }),
+    ...(updates.title             !== undefined && { title:               updates.title }),
+    ...(updates.debrief           !== undefined && { debrief:             updates.debrief }),
+    ...(updates.weekDate          !== undefined && { week_date:           updates.weekDate }),
+    ...(updates.status            !== undefined && { status:              updates.status }),
+    ...(updates.workflow          !== undefined && { workflow:            updates.workflow }),
     updated_by: user.id,
   }
 
@@ -176,6 +201,91 @@ export async function deleteStory(id) {
 
 export async function updateStoryStatus(id, status) {
   return updateStory(id, { status })
+}
+
+
+// ─── Threads ─────────────────────────────────────────────────────────────────
+
+export async function getThreads(storyId) {
+  const { data, error } = await supabase
+    .from('threads_with_messages')
+    .select('*')
+    .eq('story_id', storyId)
+    .order('order')
+  if (error) throw error
+  return data
+}
+
+export async function createThread({ storyId, type = 'secondary', order = 0, characterId = null }) {
+  const { data, error } = await supabase
+    .from('threads')
+    .insert({ story_id: storyId, type, order, character_id: characterId })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateThread(id, { type, order, characterId }) {
+  const payload = {
+    ...(type        !== undefined && { type }),
+    ...(order       !== undefined && { order }),
+    ...(characterId !== undefined && { character_id: characterId }),
+  }
+  const { data, error } = await supabase
+    .from('threads')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteThread(id) {
+  const { error } = await supabase
+    .from('threads')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
+
+export async function createMessage({ threadId, order = 0, side, characterId = null, text, sentAt = '00:00', status = 'delivered' }) {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ thread_id: threadId, order, side, character_id: characterId, text, sent_at: sentAt, status })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateMessage(id, { text, sentAt, status, order }) {
+  const payload = {
+    ...(text   !== undefined && { text }),
+    ...(sentAt !== undefined && { sent_at: sentAt }),
+    ...(status !== undefined && { status }),
+    ...(order  !== undefined && { order }),
+  }
+  const { data, error } = await supabase
+    .from('messages')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteMessage(id) {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
 }
 
 
@@ -245,6 +355,39 @@ export async function getExportFileUrl(storagePath) {
 export async function deleteExportFile(storagePath) {
   const { error } = await supabase.storage
     .from('exports')
+    .remove([storagePath])
+  if (error) throw error
+}
+
+// ─── Storage (bucket `vocals`) ────────────────────────────────────────────────
+
+export async function uploadVocalFile(storyId, file) {
+  const user      = await getUser()
+  const ext       = file.name.split('.').pop() || 'ogg'
+  const timestamp = Date.now()
+  const path      = `${user.id}/${storyId}_${timestamp}.${ext}`
+
+  const { error } = await supabase.storage
+    .from('vocals')
+    .upload(path, file, { contentType: file.type || 'audio/ogg', upsert: false })
+
+  if (error) throw error
+  return path
+}
+
+// Télécharge le fichier vocal comme blob et retourne une blob: URL.
+// Les blob URLs sont same-origin → pas de blocage COEP (FFmpeg WASM).
+export async function getVocalBlobUrl(storagePath) {
+  const { data, error } = await supabase.storage
+    .from('vocals')
+    .download(storagePath)
+  if (error) throw error
+  return URL.createObjectURL(data)
+}
+
+export async function deleteVocalFile(storagePath) {
+  const { error } = await supabase.storage
+    .from('vocals')
     .remove([storagePath])
   if (error) throw error
 }

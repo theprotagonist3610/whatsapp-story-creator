@@ -38,25 +38,4 @@ $$;
 --   "updatedAt": "ISO string"
 -- }
 
--- Met à jour la vue stories_with_profiles pour inclure la nouvelle colonne
-CREATE OR REPLACE VIEW public.stories_with_profiles AS
-SELECT
-  s.id,
-  s.title,
-  s.status,
-  s.bubbles,
-  s.workflow,
-  s.teaser_bubble_index,
-  s.debrief,
-  s.week_date,
-  s.created_by,
-  s.updated_by,
-  s.created_at,
-  s.updated_at,
-  p_creator.display_name AS creator_name,
-  p_updater.display_name AS updater_name
-FROM public.stories s
-LEFT JOIN public.profiles p_creator ON p_creator.id = s.created_by
-LEFT JOIN public.profiles p_updater ON p_updater.id = s.updated_by;
-
-GRANT SELECT ON public.stories_with_profiles TO authenticated;
+-- La vue stories_with_profiles est gérée par la migration 006.

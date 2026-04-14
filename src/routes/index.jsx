@@ -14,12 +14,13 @@ import AppLayout   from '../layouts/AppLayout.jsx'
 //   2. Ajouter le lazy() ici
 //   3. Ajouter un <Route> dans le groupe "Privées" ci-dessous
 
-const Login       = lazy(() => import('../pages/Login/index.jsx'))
-const Dashboard   = lazy(() => import('../pages/Dashboard/index.jsx'))
-const Histoires   = lazy(() => import('../pages/Histoires/index.jsx'))
-const Edition     = lazy(() => import('../pages/Edition/index.jsx'))
-const Preview     = lazy(() => import('../pages/Preview/index.jsx'))
-const Personnages = lazy(() => import('../pages/Personnages/index.jsx'))
+const Login           = lazy(() => import('../pages/Login/index.jsx'))
+const Dashboard       = lazy(() => import('../pages/Dashboard/index.jsx'))
+const Histoires       = lazy(() => import('../pages/Histoires/index.jsx'))
+const HistoireDetail  = lazy(() => import('../pages/Histoires/HistoireDetail.jsx'))
+const Edition         = lazy(() => import('../pages/Edition/index.jsx'))
+const Preview         = lazy(() => import('../pages/Preview/index.jsx'))
+const Personnages     = lazy(() => import('../pages/Personnages/index.jsx'))
 
 // ─── Fallback de chargement commun ───────────────────────────────────────────
 
@@ -65,7 +66,8 @@ export default function AppRoutes() {
           }
         >
           <Route path="/dashboard"      element={<Dashboard />} />
-          <Route path="/histoires"      element={<Histoires />} />
+          <Route path="/histoires"         element={<Histoires />} />
+          <Route path="/histoires/:id"    element={<HistoireDetail />} />
           <Route path="/edition"        element={<Edition />} />
           <Route path="/edition/:id"    element={<Edition />} />
           <Route path="/preview/:id"    element={<Preview />} />

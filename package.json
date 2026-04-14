@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "upload:stickers": "node scripts/upload-stickers.mjs",
+    "upload:stickers:force": "node scripts/upload-stickers.mjs --force",
+    "upload:stickers:dry": "node scripts/upload-stickers.mjs --dry-run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
