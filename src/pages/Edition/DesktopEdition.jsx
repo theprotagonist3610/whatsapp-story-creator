@@ -8,11 +8,11 @@ import {
   IOSKeyboard,
   WhatsAppStickerPicker,
 } from '../../components/iphone/index.js'
-import { SidebarIcon, PlayIcon, BellIcon, XIcon, DownloadSimpleIcon, SpinnerGapIcon } from '@phosphor-icons/react'
+import { SidebarIcon, PlayIcon, BellIcon, XIcon, DownloadSimpleIcon, SpinnerGapIcon, ArrowsClockwiseIcon } from '@phosphor-icons/react'
 import { actionsForScreen, ACTION_CATEGORIES, getAction, estimateDuration } from '../../engine/actions.js'
 import { playSound, playKeyboardClick } from '../../engine/sounds.js'
 import { getStory, getVocalBlobUrl } from '../../lib/supabase.js'
-import { exportSceneToMp4 } from '../../lib/exportScene.js'
+import { exportSceneToMp4, exportSceneViaServer } from '../../lib/exportScene.js'
 import { LOCAL_STICKERS, getStickerUrl, getLocalUrl } from '../../lib/stickers.js'
 import SceneTab from './SceneTab.jsx'
 
@@ -1550,7 +1550,7 @@ function StickerStrip({ value, onChange, disabled }) {
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
-export default function DesktopEdition() {
+export default function DesktopEdition({ onChangeMode }) {
   const { id: storyId } = useParams()
   const [activeTab,      setActiveTab]      = useState('LockScreen')
   const [sidebarOpen,    setSidebarOpen]    = useState(false)
@@ -1606,8 +1606,11 @@ export default function DesktopEdition() {
   const captureRef     = useRef(null)
 
   // ── Export MP4 ───────────────────────────────────────────────────────────────
-  const [isExporting,    setIsExporting]    = useState(false)
-  const [exportProgress, setExportProgress] = useState({ message: '' })
+  const [isExporting,      setIsExporting]      = useState(false)
+  const [exportProgress,   setExportProgress]   = useState({ message: '' })
+  const [exportModalOpen,  setExportModalOpen]  = useState(false)
+  const [exportMode,       setExportMode]       = useState(null) // 'browser' | 'server'
+  const [serverStatus,     setServerStatus]     = useState('unknown') // 'unknown' | 'checking' | 'online' | 'offline'
   // Refs toujours à jour pour éviter les closures périmées dans startScenePlay
   const sceneFnRef          = useRef({ startWriteMessage: null, startSendMessage: null, startDeleteChar: null })
   const writeMessagePhaseRef = useRef('idle')
@@ -1916,9 +1919,9 @@ export default function DesktopEdition() {
     setSendMessagePhase('idle')
     setRecordingPhase('idle')
     setCurrentTime(extractFirstTime(sceneSteps))
-    // Remet à zéro le dernier message du fil principal (isOnline = fil main)
+    // Remet à zéro le dernier message de tous les fils (principal + secondaire)
     setSceneConversations(prev => prev.map(c =>
-      c.isOnline ? { ...c, lastMessage: '', time: '' } : c
+      ({ ...c, lastMessage: '', time: '' })
     ))
   }, [sceneSteps])
 
@@ -1970,6 +1973,17 @@ export default function DesktopEdition() {
           // Charge les bulles de CETTE conversation (vide si première ouverture)
           setDemoBubbles(convBubblesRef.current[contact] ?? [])
           // Efface le badge non-lu pour ce contact
+          setSceneConversations(prev => prev.map(c =>
+            c.name === contact ? { ...c, unread: 0 } : c
+          ))
+          break
+        }
+        case 'tapNotification': {
+          const contact = p.contactName ?? ''
+          currentSceneContactRef.current = contact
+          setTapConvTarget(contact)
+          setTapConvPhase('sliding')
+          setDemoBubbles(convBubblesRef.current[contact] ?? [])
           setSceneConversations(prev => prev.map(c =>
             c.name === contact ? { ...c, unread: 0 } : c
           ))
@@ -2166,7 +2180,16 @@ export default function DesktopEdition() {
           if (p.time && /^\d{1,2}:\d{2}$/.test(p.time)) setCurrentTime(p.time)
           setNotifForm({ app: p.app ?? 'WhatsApp', sender: p.sender ?? '', message: p.message ?? '', time: p.time ?? 'maint.' })
           setNotifPhase('visible')
-          playSound('showNotification'); break
+          playSound('showNotification')
+          // Met à jour le preview du contact dans la liste discussions (fil secondaire)
+          if (p.sender) {
+            setSceneConversations(prev => prev.map(c =>
+              c.name === p.sender
+                ? { ...c, lastMessage: p.message ?? '', time: p.time ?? '', unread: (c.unread ?? 0) + 1 }
+                : c
+            ))
+          }
+          break
         case 'wait':
           setWaitRemaining(p.duration ?? 1000); break
         case 'playSound':
@@ -2183,10 +2206,12 @@ export default function DesktopEdition() {
 
   const startExport = useCallback(async () => {
     if (isExporting || sceneSteps.length === 0) return
+    setExportModalOpen(false)
     // Reset puis attendre que React rende le LockScreen initial
     sceneReset()
     await new Promise(r => setTimeout(r, 300))
     setIsExporting(true)
+    setExportMode('browser')
     setExportProgress({ message: 'Démarrage…' })
     try {
       const blob = await exportSceneToMp4({
@@ -2208,9 +2233,45 @@ export default function DesktopEdition() {
       setExportProgress({ message: `Erreur : ${err.message}` })
     } finally {
       setIsExporting(false)
+      setExportMode(null)
       sceneReset()
     }
   }, [isExporting, sceneSteps, sceneReset, startScenePlay, storyId])
+
+  // ── Export Mode 2 — Puppeteer serveur ────────────────────────────────────────
+  const startExportServer = useCallback(async () => {
+    if (isExporting || sceneSteps.length === 0) return
+    setExportModalOpen(false)
+    setIsExporting(true)
+    setExportMode('server')
+    setExportProgress({ message: 'Connexion au serveur…' })
+    try {
+      await exportSceneViaServer({
+        steps:         sceneSteps,
+        conversations: sceneConversations,
+        storyMeta,
+        baseName:      `scene-${storyId ?? 'export'}`,
+        onProgress:    (message) => setExportProgress({ message }),
+      })
+    } catch (err) {
+      console.error('[export-server]', err)
+      setExportProgress({ message: `Erreur : ${err.message}` })
+    } finally {
+      setIsExporting(false)
+      setExportMode(null)
+    }
+  }, [isExporting, sceneSteps, sceneConversations, storyMeta, storyId])
+
+  // Vérifie la disponibilité du serveur quand le modal s'ouvre
+  useEffect(() => {
+    if (!exportModalOpen) return
+    setServerStatus('checking')
+    const ctrl = new AbortController()
+    fetch('http://localhost:3001/health', { signal: ctrl.signal })
+      .then(r => setServerStatus(r.ok ? 'online' : 'offline'))
+      .catch(() => setServerStatus('offline'))
+    return () => ctrl.abort()
+  }, [exportModalOpen])
 
   const isFrozen = waitRemaining > 0
 
@@ -2260,7 +2321,17 @@ export default function DesktopEdition() {
             </button>
           ))}
         </div>
-        <div className="flex items-center pl-4 border-l border-gray-100 ml-2">
+        <div className="flex items-center gap-1 pl-4 border-l border-gray-100 ml-2">
+          {onChangeMode && (
+            <button
+              onClick={onChangeMode}
+              title="Changer de mode d'édition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+            >
+              <ArrowsClockwiseIcon size={13} />
+              Mode
+            </button>
+          )}
           <button
             onClick={() => setSidebarOpen((v) => !v)}
             className={`p-2 rounded-lg transition-colors ${sidebarOpen ? 'bg-brand-orange/10 text-brand-orange' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
@@ -2299,7 +2370,7 @@ export default function DesktopEdition() {
               />
               {/* Bouton export */}
               <button
-                onClick={startExport}
+                onClick={() => setExportModalOpen(true)}
                 disabled={isExporting || sceneSteps.length === 0}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
                 style={{ backgroundColor: '#1c1c1e' }}
@@ -2312,7 +2383,93 @@ export default function DesktopEdition() {
               </button>
             </div>
 
-            {/* Modal progression export */}
+            {/* ── Modal sélection du mode d'export ── */}
+            {exportModalOpen && !isExporting && (
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => setExportModalOpen(false)}
+              >
+                <div
+                  style={{ background: '#fff', borderRadius: 20, padding: '28px 28px 24px', width: 440, boxShadow: '0 24px 80px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 20 }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* En-tête */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <p style={{ fontSize: 16, fontWeight: 700, color: '#1c1c1e', marginBottom: 2 }}>Exporter en MP4</p>
+                      <p style={{ fontSize: 12, color: '#8E8E93' }}>Choisissez le moteur d'encodage</p>
+                    </div>
+                    <button onClick={() => setExportModalOpen(false)} style={{ color: '#8E8E93', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                      <XIcon size={18} />
+                    </button>
+                  </div>
+
+                  {/* Carte Mode 1 — Navigateur */}
+                  <button
+                    onClick={() => { setExportModalOpen(false); startExport() }}
+                    style={{
+                      textAlign: 'left', padding: '16px 18px', borderRadius: 14,
+                      border: '1.5px solid #e5e7eb', background: '#fafafa',
+                      cursor: 'pointer', transition: 'border-color 120ms, background 120ms',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#d9571d'; e.currentTarget.style.background = '#fff5ee' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.background = '#fafafa' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 20 }}>🌐</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e' }}>Navigateur</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, color: '#34c759', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 8px' }}>Toujours disponible</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5, margin: 0 }}>
+                      Capture le DOM en temps réel via MediaRecorder, puis convertit en MP4.
+                      Si le serveur local est démarré, la conversion est accélérée par ffmpeg natif.
+                    </p>
+                  </button>
+
+                  {/* Carte Mode 2 — Serveur Puppeteer */}
+                  <button
+                    onClick={() => serverStatus === 'online' && startExportServer()}
+                    disabled={serverStatus !== 'online'}
+                    style={{
+                      textAlign: 'left', padding: '16px 18px', borderRadius: 14,
+                      border: '1.5px solid #e5e7eb', background: serverStatus === 'online' ? '#fafafa' : '#f9fafb',
+                      cursor: serverStatus === 'online' ? 'pointer' : 'not-allowed',
+                      transition: 'border-color 120ms, background 120ms',
+                      opacity: serverStatus === 'offline' ? 0.55 : 1,
+                    }}
+                    onMouseEnter={e => { if (serverStatus === 'online') { e.currentTarget.style.borderColor = '#6366f1'; e.currentTarget.style.background = '#f5f3ff' } }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.background = serverStatus === 'online' ? '#fafafa' : '#f9fafb' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                      <span style={{ fontSize: 20 }}>🎬</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e' }}>Serveur Puppeteer</span>
+                      {serverStatus === 'checking' && (
+                        <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, color: '#8E8E93', background: '#f2f2f7', borderRadius: 6, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <SpinnerGapIcon size={10} className="animate-spin" /> Vérification…
+                        </span>
+                      )}
+                      {serverStatus === 'online' && (
+                        <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, color: '#6366f1', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, padding: '2px 8px' }}>Serveur actif</span>
+                      )}
+                      {serverStatus === 'offline' && (
+                        <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 600, color: '#ef4444', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '2px 8px' }}>Serveur arrêté</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5, margin: 0 }}>
+                      Chrome headless (Puppeteer) rejoue la scène et capture frame par frame.
+                      Meilleure qualité, sans limite de performance navigateur.
+                    </p>
+                    {serverStatus === 'offline' && (
+                      <p style={{ fontSize: 11, color: '#ef4444', marginTop: 8, marginBottom: 0, fontFamily: 'monospace', background: '#fef2f2', borderRadius: 6, padding: '4px 8px' }}>
+                        cd d:/lsd/server &amp;&amp; npm start
+                      </p>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Modal progression export ── */}
             {isExporting && (
               <div style={{
                 position: 'fixed', inset: 0, zIndex: 9999,
@@ -2325,23 +2482,30 @@ export default function DesktopEdition() {
                   boxShadow: '0 24px 80px rgba(0,0,0,0.3)',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <SpinnerGapIcon size={22} className="animate-spin shrink-0" style={{ color: '#d9571d' }} />
+                    <SpinnerGapIcon size={22} className="animate-spin shrink-0" style={{ color: exportMode === 'server' ? '#6366f1' : '#d9571d' }} />
                     <div>
-                      <p style={{ fontSize: 15, fontWeight: 700, color: '#1c1c1e', marginBottom: 2 }}>Export en cours…</p>
+                      <p style={{ fontSize: 15, fontWeight: 700, color: '#1c1c1e', marginBottom: 2 }}>
+                        {exportMode === 'server' ? 'Export Puppeteer…' : 'Export navigateur…'}
+                      </p>
                       <p style={{ fontSize: 12, color: '#8E8E93' }}>{exportProgress.message || '…'}</p>
                     </div>
                   </div>
                   <div style={{ height: 4, background: '#f2f2f7', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', borderRadius: 2,
-                      background: 'linear-gradient(90deg, #d9571d, #ff9500)',
+                      background: exportMode === 'server'
+                        ? 'linear-gradient(90deg, #6366f1, #a855f7)'
+                        : 'linear-gradient(90deg, #d9571d, #ff9500)',
                       width: '100%',
                       animation: 'indeterminate 1.4s ease infinite',
                     }} />
                   </div>
                   <style>{`@keyframes indeterminate { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }`}</style>
                   <p style={{ fontSize: 11, color: '#aeaeb2', textAlign: 'center' }}>
-                    La scène se joue en temps réel — ne pas fermer ni changer d'onglet
+                    {exportMode === 'server'
+                      ? 'Puppeteer rejoue la scène côté serveur — ne pas fermer le serveur'
+                      : "La scène se joue en temps réel — ne pas fermer ni changer d'onglet"
+                    }
                   </p>
                 </div>
               </div>

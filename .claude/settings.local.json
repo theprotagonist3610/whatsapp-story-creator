@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ffmpeg -version)",
+      "Bash(npm install:*)",
+      "Bash(node --check index.js)",
+      "Bash(npx vite:*)"
+    ]
+  }
+}

@@ -81,7 +81,7 @@ const SCREENS = [
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
-export default function MobileEdition() {
+export default function MobileEdition({ onChangeMode }) {
   const [activeId, setActiveId] = useState(null)
   const active = SCREENS.find((s) => s.id === activeId)
 
@@ -111,9 +111,19 @@ export default function MobileEdition() {
   // Liste des interfaces
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="px-4 py-4 bg-white border-b border-gray-200">
-        <h1 className="text-base font-bold text-gray-900">Aperçu des interfaces</h1>
-        <p className="text-xs text-gray-500 mt-0.5">Appuyez pour agrandir</p>
+      <div className="px-4 py-4 bg-white border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <h1 className="text-base font-bold text-gray-900">Aperçu des interfaces</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Appuyez pour agrandir</p>
+        </div>
+        {onChangeMode && (
+          <button
+            onClick={onChangeMode}
+            className="text-xs font-semibold text-gray-500 border border-gray-200 rounded-full px-3 py-1.5 hover:bg-gray-50 transition-colors"
+          >
+            ↺ Mode
+          </button>
+        )}
       </div>
 
       <div className="p-4 grid grid-cols-2 gap-4">

@@ -521,15 +521,16 @@ export function estimateDuration(actionId, params = {}) {
 
   switch (actionId) {
     case 'writeMessage': {
-      const speeds = { slow: 120, normal: 60, fast: 30 }
-      const ms     = speeds[params.speed ?? 'normal'] ?? 60
-      return (params.text?.length ?? 0) * ms + 300
+      const speeds = { slow: 72, normal: 36, fast: 18 }  // -40%
+      const ms     = speeds[params.speed ?? 'normal'] ?? 36
+      return (params.text?.length ?? 0) * ms + 180  // overhead -40%
     }
     case 'deleteChar':
       return (params.count ?? 1) * 80 + 200
-    case 'wait':
     case 'typingIndicator':
-      return params.duration ?? 1000
+      return (params.duration ?? 1000) * 0.6  // -40%
+    case 'wait':
+      return (params.duration ?? 1000) * 0.8  // -20%
     default:
       return action.animation.duration ?? 500
   }

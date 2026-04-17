@@ -21,6 +21,8 @@ const HistoireDetail  = lazy(() => import('../pages/Histoires/HistoireDetail.jsx
 const Edition         = lazy(() => import('../pages/Edition/index.jsx'))
 const Preview         = lazy(() => import('../pages/Preview/index.jsx'))
 const Personnages     = lazy(() => import('../pages/Personnages/index.jsx'))
+const HeadlessExport       = lazy(() => import('../pages/HeadlessExport/index.jsx'))
+const HeadlessTransparent  = lazy(() => import('../pages/HeadlessTransparent/index.jsx'))
 
 // ─── Fallback de chargement commun ───────────────────────────────────────────
 
@@ -54,8 +56,11 @@ export default function AppRoutes() {
     <Suspense fallback={<PageLoader />}>
       <Routes>
 
-        {/* ── Publique ── */}
-        <Route path="/login" element={<Login />} />
+        {/* ── Publiques ── */}
+        <Route path="/login"           element={<Login />} />
+        {/* Routes publiques pour l'export Puppeteer — pas d'auth, pas de navbar */}
+        <Route path="/headless-export"       element={<HeadlessExport />} />
+        <Route path="/headless-transparent"  element={<HeadlessTransparent />} />
 
         {/* ── Privées (navbar via AppLayout + Outlet) ── */}
         <Route
