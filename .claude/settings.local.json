@@ -4,7 +4,20 @@
       "Bash(ffmpeg -version)",
       "Bash(npm install:*)",
       "Bash(node --check index.js)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(node -e \"require.resolve\\('howler'\\)\")",
+      "Bash(find /d/lsd/whatsapp-story-creator/src -name \"*.jsx\" -type f -exec grep -l \"PhoneCall\\\\|phone.*call\\\\|call.*screen\" {} \\\\;)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"require\\('./index.js'\\)\")",
+      "Bash(curl -s http://localhost:3001/health)",
+      "Bash(kill %1)",
+      "Bash(node --check d:/lsd/server/index.js)",
+      "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react'\\); const keys = Object.keys\\(p\\).filter\\(k => /layer|stack|frame|square|half|overlay/i.test\\(k\\)\\); console.log\\(keys.join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/cjs/index.js'\\); const keys = Object.keys\\(p\\).filter\\(k => /layer|stack|frame|square|half/i.test\\(k\\)\\); console.log\\(keys.join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); const keys = Object.keys\\(p\\).filter\\(k => /layer|stack|frame|square|half/i.test\\(k\\)\\); console.log\\(keys.join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); console.log\\(Object.keys\\(p\\).filter\\(k => /Layer|Stack|Intersect|Subtract|Ghost|Blend|Mask/i.test\\(k\\)\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); const k = Object.keys\\(p\\); console.log\\(k.length\\); console.log\\(k.slice\\(0,10\\).join\\('\\\\n'\\)\\)\")",
+      "Bash(node index.js)"
     ]
   }
 }

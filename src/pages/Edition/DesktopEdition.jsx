@@ -18,6 +18,14 @@ import SceneTab from './SceneTab.jsx'
 
 // ─── Helpers date/heure ───────────────────────────────────────────────────────
 
+function slugTitle(title) {
+  return (title ?? 'export')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 _-]/g, '')
+    .trim().replace(/\s+/g, '_')
+    .toLowerCase() || 'export'
+}
+
 function formatLockDate(weekDate) {
   if (!weekDate) {
     return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -330,7 +338,7 @@ function WhatsAppConversationPreview({ animState }) {
   const {
     swipeBackConvPhase, notifPhase, notifForm, tapInputPhase,
     demoBubbles, newBubbleId, tapConvTarget, conversations,
-    typingPhase, recordingPhase, statusTime,
+    typingPhase, recordingPhase, isBlocked, statusTime,
   } = animState
   const convList    = conversations ?? DEMO_CONVERSATIONS
   const activeConv  = convList.find(c => c.name === tapConvTarget) ?? convList[0]
@@ -365,6 +373,7 @@ function WhatsAppConversationPreview({ animState }) {
           keyboardOffset={keyboardOpen ? KEYBOARD_H : 0}
           showTyping={typingPhase === 'visible'}
           showRecording={recordingPhase === 'visible'}
+          showBlocked={isBlocked}
         />
       </div>
 
@@ -393,6 +402,7 @@ function WhatsAppKeyboardPreview({ animState }) {
     dismissKeyboardPhase, notifPhase, notifForm,
     demoBubbles, newBubbleId, inputText, typewriterKeys, typewriterView,
     tapConvTarget, conversations, typingPhase, recordingPhase, statusTime,
+    isBlocked,
   } = animState
   const convList   = conversations ?? DEMO_CONVERSATIONS
   const activeConv = convList.find(c => c.name === tapConvTarget) ?? convList[0]
@@ -413,6 +423,7 @@ function WhatsAppKeyboardPreview({ animState }) {
           inputText={inputText} keyboardOffset={keyboardOffset}
           showTyping={typingPhase === 'visible'}
           showRecording={recordingPhase === 'visible'}
+          showBlocked={isBlocked}
         />
       </div>
 
@@ -1585,6 +1596,7 @@ export default function DesktopEdition({ onChangeMode }) {
   const [markAsReadPhase,       setMarkAsReadPhase]       = useState('idle')
   const [typingPhase,           setTypingPhase]           = useState('idle') // idle | visible
   const [recordingPhase,        setRecordingPhase]        = useState('idle') // idle | visible
+  const [isBlocked,             setIsBlocked]             = useState(false)
   const [inputText,             setInputText]             = useState('')
   const [writeMessageForm,      setWriteMessageForm]      = useState({ text: "Ah bon, c'est grave ?", speed: 'normal' })
   const [sendMessageForm,       setSendMessageForm]       = useState({ time: '09:41', status: 'sent' })
@@ -1747,7 +1759,7 @@ export default function DesktopEdition({ onChangeMode }) {
     if (writeMessagePhase !== 'idle') return
     const text  = overText  !== undefined ? overText  : writeMessageForm.text
     const speed = overSpeed !== undefined ? overSpeed : writeMessageForm.speed
-    const delay    = speed === 'slow' ? 120 : speed === 'fast' ? 30 : 60
+    const delay    = typeof speed === 'number' ? speed : speed === 'slow' ? 120 : speed === 'fast' ? 30 : 60
     const popDur   = Math.min(delay - 5, 160)
 
     // Précalcule la séquence complète d'étapes
@@ -1918,6 +1930,7 @@ export default function DesktopEdition({ onChangeMode }) {
     setDeleteCharPhase('idle')
     setSendMessagePhase('idle')
     setRecordingPhase('idle')
+    setIsBlocked(false)
     setCurrentTime(extractFirstTime(sceneSteps))
     // Remet à zéro le dernier message de tous les fils (principal + secondaire)
     setSceneConversations(prev => prev.map(c =>
@@ -2146,8 +2159,58 @@ export default function DesktopEdition({ onChangeMode }) {
           }
           break
         }
+        case 'receivePhoto': {
+          setTypingPhase('idle')
+          if (p.storagePath) {
+            if (p.time) setCurrentTime(p.time)
+            const b = {
+              id: `b${Date.now()}`, side: 'incoming',
+              text: `[photo:${p.storagePath}]`,
+              time: p.time ?? '09:41', status: 'read',
+              characterName: p.characterName ?? '',
+            }
+            setDemoBubbles(prev => {
+              const next = [...prev, b]
+              if (currentSceneContactRef.current) convBubblesRef.current[currentSceneContactRef.current] = next
+              return next
+            })
+            setNewBubbleId(b.id)
+            playSound('message_received')
+            setTimeout(() => setNewBubbleId(null), 600)
+            const c = currentSceneContactRef.current
+            if (c) setSceneConversations(prev => prev.map(cv =>
+              cv.name === c ? { ...cv, lastMessage: '📷 Photo', time: p.time ?? '09:41', isOutgoing: false, outgoingStatus: undefined } : cv
+            ))
+          }
+          break
+        }
+        case 'sendPhoto': {
+          if (p.storagePath) {
+            if (p.time) setCurrentTime(p.time)
+            const b = {
+              id: `b${Date.now()}`, side: 'outgoing',
+              text: `[photo:${p.storagePath}]`,
+              time: p.time ?? '09:41', status: p.status ?? 'sent',
+            }
+            setDemoBubbles(prev => {
+              const next = [...prev, b]
+              if (currentSceneContactRef.current) convBubblesRef.current[currentSceneContactRef.current] = next
+              return next
+            })
+            setNewBubbleId(b.id)
+            playSound('message_sent')
+            setTimeout(() => setNewBubbleId(null), 600)
+            const c = currentSceneContactRef.current
+            if (c) setSceneConversations(prev => prev.map(cv =>
+              cv.name === c ? { ...cv, lastMessage: '📷 Photo', time: p.time ?? '09:41', isOutgoing: true, outgoingStatus: p.status ?? 'sent' } : cv
+            ))
+          }
+          break
+        }
         case 'markAsRead':
           setMarkAsReadPhase('animating'); break
+        case 'blockContact':
+          setIsBlocked(true); break
         case 'writeMessage':
           sceneFnRef.current.startWriteMessage(p.text, p.speed); break
         case 'deleteChar':
@@ -2225,7 +2288,7 @@ export default function DesktopEdition({ onChangeMode }) {
       const url = URL.createObjectURL(blob)
       const a   = document.createElement('a')
       a.href     = url
-      a.download = `scene-${storyId ?? 'export'}.${ext}`
+      a.download = `improvise_${slugTitle(storyMeta?.title)}.${ext}`
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 10000)
     } catch (err) {
@@ -2250,7 +2313,7 @@ export default function DesktopEdition({ onChangeMode }) {
         steps:         sceneSteps,
         conversations: sceneConversations,
         storyMeta,
-        baseName:      `scene-${storyId ?? 'export'}`,
+        baseName:      `improvise_${slugTitle(storyMeta?.title)}`,
         onProgress:    (message) => setExportProgress({ message }),
       })
     } catch (err) {
@@ -2290,6 +2353,7 @@ export default function DesktopEdition({ onChangeMode }) {
     markAsReadPhase, setMarkAsReadPhase,
     typingPhase, setTypingPhase,
     recordingPhase, setRecordingPhase,
+    isBlocked,
     inputText, setInputText,
     writeMessageForm, setWriteMessageForm, writeMessagePhase, startWriteMessage,
     deleteCharForm, setDeleteCharForm, deleteCharPhase, startDeleteChar,

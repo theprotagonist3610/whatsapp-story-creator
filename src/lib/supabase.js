@@ -385,9 +385,75 @@ export async function getVocalBlobUrl(storagePath) {
   return URL.createObjectURL(data)
 }
 
+/** Retourne une URL signée (1 heure) du fichier vocal — utilisée côté serveur (manifest transparent). */
+export async function getVocalSignedUrl(storagePath) {
+  const { data, error } = await supabase.storage
+    .from('vocals')
+    .createSignedUrl(storagePath, 3600)
+  if (error) throw error
+  return data.signedUrl
+}
+
 export async function deleteVocalFile(storagePath) {
   const { error } = await supabase.storage
     .from('vocals')
     .remove([storagePath])
   if (error) throw error
+}
+
+// ─── Storage (bucket `photos`) ────────────────────────────────────────────────
+//
+// Bucket public — getPhotoPublicUrl() donne l'URL directe (utile côté serveur/Puppeteer).
+// Dans le navigateur, COEP (require-corp) bloque les images cross-origin :
+// utiliser getPhotoBlobUrl() → download() → blob URL same-origin.
+
+export async function uploadPhotoFile(storyId, file) {
+  const user      = await getUser()
+  const ext       = file.name.split('.').pop() || 'jpg'
+  const timestamp = Date.now()
+  const path      = `${user.id}/${storyId}_${timestamp}.${ext}`
+
+  const { error } = await supabase.storage
+    .from('photos')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+
+  if (error) throw error
+  return path
+}
+
+/** Retourne l'URL publique d'une photo — synchrone, utile pour le serveur/Puppeteer. */
+export function getPhotoPublicUrl(storagePath) {
+  if (!storagePath) return ''
+  const { data } = supabase.storage.from('photos').getPublicUrl(storagePath)
+  return data.publicUrl
+}
+
+/**
+ * Télécharge la photo comme blob et retourne une blob: URL.
+ * Les blob URLs sont same-origin → pas de blocage COEP dans le navigateur.
+ */
+export async function getPhotoBlobUrl(storagePath) {
+  const { data, error } = await supabase.storage
+    .from('photos')
+    .download(storagePath)
+  if (error) throw error
+  return URL.createObjectURL(data)
+}
+
+export async function deletePhotoFile(storagePath) {
+  const { error } = await supabase.storage
+    .from('photos')
+    .remove([storagePath])
+  if (error) throw error
+}
+
+export async function listUserPhotos() {
+  const user = await getUser()
+  const { data, error } = await supabase.storage
+    .from('photos')
+    .list(user.id, { sortBy: { column: 'name', order: 'desc' }, limit: 200 })
+  if (error) throw error
+  return (data ?? [])
+    .filter(f => f.name !== '.emptyFolderPlaceholder')
+    .map(f => `${user.id}/${f.name}`)
 }

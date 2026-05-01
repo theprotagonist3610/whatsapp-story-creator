@@ -3,7 +3,8 @@
 // Variantes type  : text | sticker | photo | vocal
 // Variantes style : normal (palette WhatsApp) | glass (glassmorphisme)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { getPhotoBlobUrl } from '../../lib/supabase.js'
 
 // ─── Palettes ─────────────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ export default function ConversationBubble({
   // ── Meta (heure + tick) ───────────────────────────────────────────────────
   const Meta = ({ forSticker = false }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
-      <span style={{ fontSize: 11, color: forSticker ? 'rgba(255,255,255,0.85)' : p.timeCl }}>
+      <span style={{ fontSize: 12, color: forSticker ? 'rgba(255,255,255,0.85)' : p.timeCl }}>
         {time}
       </span>
       {isOut && <StatusTick status={status} p={p} />}
@@ -166,7 +167,7 @@ export default function ConversationBubble({
   )
 
   const CharName = () => characterName && !isOut ? (
-    <p style={{ fontSize: 11, fontWeight: 700, color: p.nameCl, marginBottom: 2 }}>
+    <p style={{ fontSize: 12, fontWeight: 700, color: p.nameCl, marginBottom: 2 }}>
       {characterName}
     </p>
   ) : null
@@ -194,15 +195,25 @@ export default function ConversationBubble({
   }
 
   if (type === 'photo') {
+    const [blobUrl, setBlobUrl] = useState(null)
+    useEffect(() => {
+      if (!attachmentUrl) return
+      let revoked = false
+      getPhotoBlobUrl(attachmentUrl)
+        .then(url => { if (!revoked) setBlobUrl(url) })
+        .catch(() => {})
+      return () => { revoked = true }
+    }, [attachmentUrl])
+
     return (
       <div style={rowStyle}>
         <div style={{ ...bubbleBase, overflow: 'hidden', maxWidth: 220 }}>
           <CharName />
-          <img src={attachmentUrl} alt="photo"
-            style={{ width: '100%', display: 'block', maxHeight: 260, objectFit: 'cover' }} />
+          {blobUrl && <img src={blobUrl} alt="photo"
+            style={{ width: '100%', display: 'block', maxHeight: 260, objectFit: 'cover' }} />}
           <div style={{ padding: '4px 8px 6px' }}>
             {text && (
-              <p style={{ fontSize: 14, color: isOut ? p.outText : p.inText,
+              <p style={{ fontSize: 16, color: isOut ? p.outText : p.inText,
                 margin: '2px 0 4px', lineHeight: 1.4 }}>{text}</p>
             )}
             <Meta />
@@ -236,12 +247,33 @@ export default function ConversationBubble({
     )
   }
 
+  // ── Blocage ───────────────────────────────────────────────────────────────
+  if (type === 'block') {
+    return (
+      <div style={{
+        display:    'flex',
+        justifyContent: 'center',
+        padding:    '10px 24px',
+        opacity:    visible ? 1 : 0,
+        transition: 'opacity 280ms ease',
+      }}>
+        <span style={{
+          fontSize:   12,
+          color:      glass ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.40)',
+          textAlign:  'center',
+        }}>
+          🚫 Vous avez bloqué ce contact
+        </span>
+      </div>
+    )
+  }
+
   // ── Texte (défaut) ────────────────────────────────────────────────────────
   return (
     <div style={rowStyle}>
       <div style={{ ...bubbleBase, padding: '6px 10px 4px', maxWidth: 260, wordBreak: 'break-word' }}>
         <CharName />
-        <p style={{ fontSize: 14, color: isOut ? p.outText : p.inText, margin: 0, lineHeight: 1.45 }}>
+        <p style={{ fontSize: 16, color: isOut ? p.outText : p.inText, margin: 0, lineHeight: 1.45 }}>
           {text}
         </p>
         <Meta />

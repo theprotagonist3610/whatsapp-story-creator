@@ -856,6 +856,54 @@ function ScenePlayer({ steps = [], conversations: initConvs, storyMeta }) {
           }
           break
         }
+        case 'receivePhoto': {
+          setTypingPhase('idle')
+          if (p.storagePath) {
+            if (p.time) setCurrentTime(p.time)
+            const b = {
+              id: `b${Date.now()}`, side: 'incoming',
+              text: `[photo:${p.storagePath}]`,
+              time: p.time ?? '09:41', status: 'read',
+              characterName: p.characterName ?? '',
+            }
+            setDemoBubbles(prev => {
+              const next = [...prev, b]
+              if (currentContactRef.current) convBubblesRef.current[currentContactRef.current] = next
+              return next
+            })
+            setNewBubbleId(b.id)
+            playSound('receiveMessage')
+            setTimeout(() => setNewBubbleId(null), 600)
+            const c = currentContactRef.current
+            if (c) setSceneConversations(prev => prev.map(cv =>
+              cv.name === c ? { ...cv, lastMessage: '📷 Photo', time: p.time ?? '09:41', isOutgoing: false } : cv
+            ))
+          }
+          break
+        }
+        case 'sendPhoto': {
+          if (p.storagePath) {
+            if (p.time) setCurrentTime(p.time)
+            const b = {
+              id: `b${Date.now()}`, side: 'outgoing',
+              text: `[photo:${p.storagePath}]`,
+              time: p.time ?? '09:41', status: p.status ?? 'sent',
+            }
+            setDemoBubbles(prev => {
+              const next = [...prev, b]
+              if (currentContactRef.current) convBubblesRef.current[currentContactRef.current] = next
+              return next
+            })
+            setNewBubbleId(b.id)
+            playSound('sendMessage')
+            setTimeout(() => setNewBubbleId(null), 600)
+            const c = currentContactRef.current
+            if (c) setSceneConversations(prev => prev.map(cv =>
+              cv.name === c ? { ...cv, lastMessage: '📷 Photo', time: p.time ?? '09:41', isOutgoing: true } : cv
+            ))
+          }
+          break
+        }
         case 'markAsRead':
           setMarkAsReadPhase('animating')
           break

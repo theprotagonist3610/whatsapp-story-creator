@@ -11,7 +11,7 @@ import {
   estimateDuration,
 } from '../../engine/actions.js'
 import { getStoryWorkflow, updateStory, getThreads } from '../../lib/supabase.js'
-import { isStickerText, stickerFilename, isVocalText, vocalPath, vocalDuration } from '../Histoires/DesktopHistoireDetail.jsx'
+import { isStickerText, stickerFilename, isVocalText, vocalPath, vocalDuration, isPhotoText, photoPath } from '../Histoires/DesktopHistoireDetail.jsx'
 import { LOCAL_STICKERS, getLocalUrl } from '../../lib/stickers.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -470,13 +470,16 @@ function DialogueView({ threads = [] }) {
                       const isOut       = m.side === 'outgoing'
                       const isSticker   = isStickerText(m.text)
                       const isVocal     = !isSticker && isVocalText(m.text)
+                      const isPhotoMsg  = !isSticker && !isVocal && isPhotoText(m.text)
                       const filename    = isSticker ? stickerFilename(m.text) : null
-                      const correction  = !isSticker && !isVocal ? parseCorrectionText(m.text) : null
+                      const correction  = !isSticker && !isVocal && !isPhotoMsg ? parseCorrectionText(m.text) : null
                       const displayText = correction
                         ? `[🚫 ${correction.before}] → ${correction.after}`
                         : isVocal
                           ? `🎤 Note vocale (${fmtMs(vocalDuration(m.text) * 1000)})`
-                          : m.text
+                          : isPhotoMsg
+                            ? '📷 Photo'
+                            : m.text
                       return (
                         <div key={m.id} className={`flex items-end gap-2 ${isOut ? 'flex-row-reverse' : 'flex-row'}`}>
                           {!isOut && (
@@ -546,7 +549,9 @@ function buildConversationList(threads) {
           ? '🖼 Sticker'
           : isVocalText(rawPreview)
             ? '🎤 Note vocale'
-            : (parseCorrectionText(rawPreview)?.after ?? rawPreview)
+            : isPhotoText(rawPreview)
+              ? '📷 Photo'
+              : (parseCorrectionText(rawPreview)?.after ?? rawPreview)
         : null
       // Le fil principal démarre sans aperçu : la scène affichera les messages au fur et à mesure
       const isMain = t.type === 'main'
@@ -580,6 +585,20 @@ function parseCorrectionText(text) {
   return { before: m[1], after: m[2] }
 }
 
+/** Masque les 4 derniers chiffres si le nom ressemble à un numéro de téléphone */
+function maskPhone(name) {
+  if (!name) return 'Inconnu'
+  return /^[+\d\s()./-]{7,}$/.test(name.trim())
+    ? name.trimEnd().slice(0, -4) + '••••'
+    : name
+}
+
+/** Délai par caractère (ms) pour que la frappe tienne en ≤ 4 s */
+function writeSpeed(text) {
+  const len = text?.length ?? 0
+  return len === 0 ? 60 : Math.min(60, Math.floor(3820 / len))
+}
+
 function generateImprovisedScene(threads) {
   const s = (actionId, payload = {}, durationMs = null) => ({
     id: uid(), actionId,
@@ -597,13 +616,15 @@ function generateImprovisedScene(threads) {
   const firstIncoming = (mainThread.messages ?? []).find(m => m.side === 'incoming')
   steps.push(s('showNotification', {
     app:     'WhatsApp',
-    sender:  mainThread.character_name ?? 'Inconnu',
+    sender:  maskPhone(mainThread.character_name ?? 'Inconnu'),
     message: firstIncoming
       ? isStickerText(firstIncoming.text)
         ? '🖼 Sticker'
         : isVocalText(firstIncoming.text)
           ? '🎤 Note vocale'
-          : (parseCorrectionText(firstIncoming.text)?.before ?? firstIncoming.text)
+          : isPhotoText(firstIncoming.text)
+            ? '📷 Photo'
+            : (parseCorrectionText(firstIncoming.text)?.before ?? firstIncoming.text)
       : '…',
     time:    firstIncoming?.sentAt ?? 'maint.',
   }))
@@ -632,7 +653,7 @@ function generateImprovisedScene(threads) {
   let keyboardOpen = false
 
   for (const msg of allMessages) {
-    const contact = msg.thread.character_name ?? 'Inconnu'
+    const contact = maskPhone(msg.thread.character_name ?? 'Inconnu')
 
     // Changer de conversation si nécessaire
     if (contact !== currentConv) {
@@ -647,17 +668,24 @@ function generateImprovisedScene(threads) {
       currentConv = contact
     }
 
+    // Mot-clé BLOQUER — bloque le contact immédiatement
+    if ((msg.text ?? '').trim() === 'BLOQUER') {
+      if (keyboardOpen) { steps.push(s('dismissKeyboard')); keyboardOpen = false }
+      steps.push(s('blockContact'))
+      continue   // pas de wait trailing
+    }
+
     const isSticker    = isStickerText(msg.text)
     const isVocal      = !isSticker && isVocalText(msg.text)
-    const correction   = !isSticker && !isVocal ? parseCorrectionText(msg.text) : null
+    const isPhoto      = !isSticker && !isVocal && isPhotoText(msg.text)
+    const correction   = !isSticker && !isVocal && !isPhoto ? parseCorrectionText(msg.text) : null
     const effectiveLen = correction
       ? Math.max((correction.before?.length ?? 0), (correction.after?.length ?? 0))
       : (msg.text?.length ?? 0)
     const vocalDurSecs = isVocal ? vocalDuration(msg.text) : 0
-    const readMs    = isVocal ? Math.max(1500, vocalDurSecs * 1000 + 800)
-                    : isSticker ? 1500
-                    : Math.min(4000, Math.max(1500, effectiveLen * 55))
-    const typingMs  = isSticker ? 1200 : Math.min(3000, Math.max(1000, effectiveLen * 40))
+    const readMs    = isVocal ? Math.min(1000, Math.max(750, vocalDurSecs * 500 + 400))
+                    : 1000
+    const typingMs  = (isSticker || isPhoto) ? 600 : Math.min(1500, Math.max(500, effectiveLen * 20))
 
     if (isVocal) {
       const storagePath = vocalPath(msg.text)
@@ -669,6 +697,24 @@ function generateImprovisedScene(threads) {
       } else {
         if (keyboardOpen) { steps.push(s('dismissKeyboard')); keyboardOpen = false }
         steps.push(s('sendVocal', { storagePath, duration, time: msg.sentAt ?? '09:41', status: msg.status ?? 'sent' }))
+      }
+    } else if (isPhoto) {
+      const storagePath   = photoPath(msg.text)
+      if (msg.side === 'incoming') {
+        steps.push(s('typingIndicator', { duration: typingMs }))
+        steps.push(s('receivePhoto', {
+          storagePath,
+          characterName: contact,
+          time:          msg.sentAt ?? '09:41',
+        }))
+        if (keyboardOpen) { steps.push(s('dismissKeyboard')); keyboardOpen = false }
+      } else {
+        if (keyboardOpen) { steps.push(s('dismissKeyboard')); keyboardOpen = false }
+        steps.push(s('sendPhoto', {
+          storagePath,
+          time:   msg.sentAt ?? '09:41',
+          status: msg.status ?? 'sent',
+        }))
       }
     } else if (isSticker) {
       const filename = stickerFilename(msg.text)
@@ -706,13 +752,13 @@ function generateImprovisedScene(threads) {
         keyboardOpen = false
       } else {
         if (!keyboardOpen) { steps.push(s('tapInput')); keyboardOpen = true }
-        steps.push(s('writeMessage', { text: correction.before, speed: 'slow' }))
+        steps.push(s('writeMessage', { text: correction.before, speed: writeSpeed(correction.before) }))
         steps.push(s('sendMessage',  { time, status }))
         steps.push(s('wait', { duration: 1200 }))
         steps.push(s('deleteSentMessage', { bubbleIndex: -1 }))
         steps.push(s('wait', { duration: 800 }))
         steps.push(s('tapInput'))
-        steps.push(s('writeMessage', { text: correction.after, speed: 'slow' }))
+        steps.push(s('writeMessage', { text: correction.after, speed: writeSpeed(correction.after) }))
         steps.push(s('sendMessage',  { time, status }))
         keyboardOpen = false
       }
@@ -729,7 +775,7 @@ function generateImprovisedScene(threads) {
         steps.push(s('tapInput'))
         keyboardOpen = true
       }
-      steps.push(s('writeMessage', { text: msg.text, speed: 'slow' }))
+      steps.push(s('writeMessage', { text: msg.text, speed: writeSpeed(msg.text) }))
       steps.push(s('sendMessage',  { time: msg.sentAt ?? '09:41', status: msg.status ?? 'sent' }))
       keyboardOpen = false
     }
@@ -737,6 +783,7 @@ function generateImprovisedScene(threads) {
     steps.push(s('wait', { duration: readMs }))
   }
 
+  steps.push(s('wait', { duration: 2000 }))
   return steps
 }
 

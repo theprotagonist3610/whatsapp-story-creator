@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CaretLeftIcon,
   VideoCameraIcon,
@@ -15,6 +15,7 @@ import {
 import StatusBar from './StatusBar.jsx'
 import { HomeIndicator } from './LockScreen.jsx'
 import { getStickerUrl, getLocalUrl } from '../../lib/stickers.js'
+import { getPhotoBlobUrl } from '../../lib/supabase.js'
 
 // ─── WhatsAppConversation — chat WhatsApp iOS ─────────────────────────────────
 // Dimensions : 390×844px
@@ -46,6 +47,7 @@ export default function WhatsAppConversation({
   newBubbleId      = null,
   showTyping       = false,
   showRecording    = false,
+  showBlocked      = false,
 }) {
   return (
     <div
@@ -177,6 +179,27 @@ export default function WhatsAppConversation({
             </div>
           )}
 
+          {/* Bandeau "Vous avez bloqué ce contact" */}
+          {showBlocked && (
+            <div style={{
+              display: 'flex', justifyContent: 'center',
+              padding: '2px 20px 6px',
+              animation: 'bubblePopIn 320ms cubic-bezier(0.34,1.56,0.64,1) both',
+            }}>
+              <div style={{
+                backgroundColor: 'rgba(0,0,0,0.055)',
+                borderRadius: 10,
+                padding: '5px 14px',
+                fontSize: 12,
+                color: 'rgba(0,0,0,0.45)',
+                textAlign: 'center',
+                lineHeight: 1.4,
+              }}>
+                🚫 Vous avez bloqué ce contact
+              </div>
+            </div>
+          )}
+
           {/* Indicateur "Enregistrement…" */}
           {showRecording && (
             <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
@@ -206,6 +229,19 @@ export default function WhatsAppConversation({
         </div>
 
         {/* Barre de saisie */}
+        {showBlocked ? (
+          <div style={{
+            position: 'relative', zIndex: 2,
+            backgroundColor: '#F0F0F0',
+            padding: '10px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.35)', textAlign: 'center' }}>
+              Vous ne pouvez pas envoyer de messages à ce contact
+            </span>
+          </div>
+        ) : (
         <div
           style={{
             position: 'relative',
@@ -258,6 +294,7 @@ export default function WhatsAppConversation({
             </div>
           ) : null}
         </div>
+        )} {/* fin ternaire showBlocked */}
 
         {/* Home indicator */}
         <div style={{ flexShrink: 0, position: 'relative', zIndex: 2, backgroundColor: '#F0F0F0' }}>
@@ -275,6 +312,13 @@ const STICKER_RE = /^\[sticker:(.+)\]$/
 function isStickerText(text) { return STICKER_RE.test(text?.trim() ?? '') }
 function stickerFilename(text) { return text?.trim().match(STICKER_RE)?.[1] ?? null }
 function stickerUrl(filename) { return getStickerUrl(filename) ?? '' }
+
+// ─── Helpers photos ───────────────────────────────────────────────────────────
+
+const PHOTO_RE = /^\[photo:(.+)\]$/
+
+function isPhotoText(text) { return PHOTO_RE.test(text?.trim() ?? '') }
+function photoStoragePath(text) { return text?.trim().match(PHOTO_RE)?.[1] ?? null }
 
 // ─── Helpers vocals ───────────────────────────────────────────────────────────
 
@@ -337,7 +381,7 @@ function VocalChatBubble({ text, blobUrl, time, status, isOutgoing, isNew, chara
     }}>
       <audio ref={audioRef} />
       {!isOutgoing && characterName && (
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#d9571d', lineHeight: 1.2 }}>{characterName}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#d9571d', lineHeight: 1.2 }}>{characterName}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <div style={{
@@ -359,6 +403,71 @@ function VocalChatBubble({ text, blobUrl, time, status, isOutgoing, isNew, chara
   )
 }
 
+// ─── Bulle photo ─────────────────────────────────────────────────────────────
+
+function PhotoChatBubble({ text, time, status, isOutgoing, isNew, characterName }) {
+  const storagePath  = photoStoragePath(text)
+  const [url, setUrl] = useState(null)
+
+  useEffect(() => {
+    if (!storagePath) return
+    let revoked = false
+    getPhotoBlobUrl(storagePath)
+      .then(blobUrl => { if (!revoked) setUrl(blobUrl) })
+      .catch(() => {})
+    return () => { revoked = true }
+  }, [storagePath])
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        borderRadius: isOutgoing ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+        overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+        maxWidth: 220,
+        animation: isNew ? 'bubblePopIn 320ms cubic-bezier(0.34,1.56,0.64,1) both' : 'none',
+      }}
+    >
+      {!isOutgoing && characterName && (
+        <div style={{
+          position: 'absolute', top: 6, left: 8, zIndex: 2,
+          fontSize: 11, fontWeight: 600, color: '#fff',
+          textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+        }}>
+          {characterName}
+        </div>
+      )}
+
+      {url ? (
+        <img
+          src={url}
+          alt="photo"
+          style={{ width: '100%', maxHeight: 260, objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        <div style={{
+          width: 180, height: 140,
+          backgroundColor: isOutgoing ? '#b2dfdb' : '#e0e0e0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <CameraIcon size={28} color="rgba(0,0,0,0.3)" />
+        </div>
+      )}
+
+      {/* Heure + tick en overlay bas-droite */}
+      <div style={{
+        position: 'absolute', bottom: 5, right: 7,
+        display: 'flex', alignItems: 'center', gap: 3,
+        background: 'rgba(0,0,0,0.38)', borderRadius: 6, padding: '1px 5px',
+      }}>
+        <span style={{ fontSize: 10, color: '#fff' }}>{time}</span>
+        {isOutgoing && <Ticks status={status} color="#fff" />}
+      </div>
+    </div>
+  )
+}
+
 // ─── Bulle de chat ────────────────────────────────────────────────────────────
 
 function ChatBubble({ side = 'incoming', text = '', time = '', status = 'sent', characterName = '', isNew = false, deleted = false, blobUrl = null }) {
@@ -366,6 +475,7 @@ function ChatBubble({ side = 'incoming', text = '', time = '', status = 'sent', 
   const tickColor  = TICK_COLORS[status] ?? TICK_COLORS.sent
   const isSticker  = isStickerText(text)
   const isVocal    = isVocalText(text)
+  const isPhoto    = isPhotoText(text)
 
   return (
     <div
@@ -393,7 +503,7 @@ function ChatBubble({ side = 'incoming', text = '', time = '', status = 'sent', 
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 15 }}>🚫</span>
-            <span style={{ fontSize: 14, color: '#8E8E93', fontStyle: 'italic' }}>
+            <span style={{ fontSize: 16, color: '#8E8E93', fontStyle: 'italic' }}>
               Ce message a été supprimé
             </span>
           </div>
@@ -405,6 +515,12 @@ function ChatBubble({ side = 'incoming', text = '', time = '', status = 'sent', 
         /* ── Bulle note vocale ── */
         <VocalChatBubble
           text={text} blobUrl={blobUrl} time={time} status={status}
+          isOutgoing={isOutgoing} isNew={isNew} characterName={characterName}
+        />
+      ) : isPhoto ? (
+        /* ── Bulle photo ── */
+        <PhotoChatBubble
+          text={text} time={time} status={status}
           isOutgoing={isOutgoing} isNew={isNew} characterName={characterName}
         />
       ) : isSticker ? (
@@ -445,19 +561,19 @@ function ChatBubble({ side = 'incoming', text = '', time = '', status = 'sent', 
         >
           {/* Nom */}
           {!isOutgoing && characterName && (
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#d9571d', marginBottom: 2, lineHeight: 1.2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#d9571d', marginBottom: 2, lineHeight: 1.2 }}>
               {characterName}
             </div>
           )}
 
           {/* Texte */}
-          <span style={{ fontSize: 15, color: '#000000', lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <span style={{ fontSize: 17, color: '#000000', lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {text}
           </span>
 
           {/* Heure + statut */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 2 }}>
-            <span style={{ fontSize: 11, color: '#8E8E93' }}>{time}</span>
+            <span style={{ fontSize: 12, color: '#8E8E93' }}>{time}</span>
             {isOutgoing && <Ticks status={status} color={tickColor} />}
           </div>
         </div>

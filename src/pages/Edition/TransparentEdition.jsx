@@ -5,15 +5,35 @@
 //   Centre  — preview live TransparentConversation sur fond damier
 //   Droite  — formulaire d'ajout d'action
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { ArrowsClockwiseIcon, PlayIcon, TrashIcon, PlusIcon,
          ArrowUpIcon, ArrowDownIcon, DownloadSimpleIcon,
          SpinnerGapIcon, XIcon, FilmSlateIcon } from '@phosphor-icons/react'
 import TransparentConversation from '../../components/transparent/TransparentConversation.jsx'
-import { getThreads } from '../../lib/supabase.js'
-import { isStickerText, stickerFilename, isVocalText, vocalPath, vocalDuration } from '../Histoires/DesktopHistoireDetail.jsx'
+import { getThreads, getVocalBlobUrl, getStory } from '../../lib/supabase.js'
+import { isStickerText, stickerFilename, isVocalText, vocalPath, vocalDuration, isPhotoText, photoPath } from '../Histoires/DesktopHistoireDetail.jsx'
 import { getLocalUrl } from '../../lib/stickers.js'
+import { playSound, playVocal, getSfxVolume, getVocalsVolume, setSfxVolume, setVocalsVolume } from '../../engine/sounds.js'
+import { buildAudioManifest } from '../../lib/audioManifest.js'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Masque les 4 derniers chiffres si le nom ressemble à un numéro de téléphone */
+function maskPhone(name) {
+  if (!name) return 'Inconnu'
+  return /^[+\d\s()./-]{7,}$/.test(name.trim())
+    ? name.trimEnd().slice(0, -4) + '••••'
+    : name
+}
+
+function slugTitle(title) {
+  return (title ?? 'export')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 _-]/g, '')
+    .trim().replace(/\s+/g, '_')
+    .toLowerCase() || 'export'
+}
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -65,24 +85,42 @@ function generateTransparentScene(threads) {
   const steps = []
 
   for (const msg of allMessages) {
-    const contact    = msg.thread.character_name ?? 'Inconnu'
+    const contact    = maskPhone(msg.thread.character_name ?? 'Inconnu')
     const time       = msg.sentAt ?? '09:41'
     const isSticker  = isStickerText(msg.text)
     const isVocal    = !isSticker && isVocalText(msg.text)
-    const correction = !isSticker && !isVocal
+    const isPhoto    = !isSticker && !isVocal && isPhotoText(msg.text)
+    const correction = !isSticker && !isVocal && !isPhoto
       ? (msg.text ?? '').trim().match(CORRECTION_RE)
       : null
 
     const effectiveText = correction ? correction[2] : msg.text   // version finale si correction
     const effectiveLen  = effectiveText?.length ?? 0
-    const typingMs      = isSticker ? 1200
-      : Math.min(3000, Math.max(800, effectiveLen * 40))
+    const typingMs      = (isSticker || isPhoto) ? 600
+      : Math.min(1500, Math.max(400, effectiveLen * 20))
     const readMs        = isVocal
-      ? Math.max(1500, vocalDuration(msg.text) * 1000 + 800)
-      : isSticker ? 1500
-      : Math.min(4000, Math.max(1500, effectiveLen * 55))
+      ? Math.min(1000, Math.max(750, vocalDuration(msg.text) * 500 + 400))
+      : 1000
 
-    if (isSticker) {
+    // Mot-clé BLOQUER
+    if (!isSticker && !isVocal && !isPhoto && !correction && (msg.text ?? '').trim() === 'BLOQUER') {
+      steps.push(step('blockContact'))
+      continue   // pas de wait trailing
+    }
+
+    if (isPhoto) {
+      const attachmentUrl = photoPath(msg.text)   // storagePath brut — ConversationBubble charge via getPhotoBlobUrl
+      if (msg.side === 'incoming') {
+        steps.push(step('typingIndicator', { duration: typingMs, characterName: contact }))
+      }
+      steps.push(step('writeMessage', {
+        side:          msg.side,
+        msgType:       'photo',
+        attachmentUrl,
+        characterName: msg.side === 'incoming' ? contact : '',
+        time,
+      }))
+    } else if (isSticker) {
       const filename = stickerFilename(msg.text)
       const url      = getLocalUrl(filename) ?? ''
       if (msg.side === 'incoming') {
@@ -124,6 +162,7 @@ function generateTransparentScene(threads) {
     steps.push(step('wait', { duration: readMs }))
   }
 
+  steps.push(step('wait', { duration: 2000 }))
   return steps
 }
 
@@ -138,6 +177,8 @@ function stepLabel(step) {
       return `Frappe… ${((step.duration ?? 1000) / 1000).toFixed(1)}s`
     case 'wait':
       return `Pause ${((step.duration ?? 1000) / 1000).toFixed(1)}s`
+    case 'blockContact':
+      return '🚫 Bloquer le contact'
     default:
       return step.type
   }
@@ -408,8 +449,14 @@ export default function TransparentEdition({ onChangeMode }) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [genError,     setGenError]     = useState(null)
   const [glass,        setGlass]        = useState(false)
+  const [storyTitle,   setStoryTitle]   = useState(null)
   const timerRef   = useRef(null)
   const captureRef = useRef(null)
+
+  useEffect(() => {
+    if (!storyId) return
+    getStory(storyId).then(s => setStoryTitle(s.title ?? null)).catch(() => {})
+  }, [storyId])
 
   // ── Génération depuis l'histoire ──────────────────────────────────────────
 
@@ -508,8 +555,15 @@ export default function TransparentEdition({ onChangeMode }) {
           }, step.duration ?? 1000)
           break
 
-        case 'writeMessage':
+        case 'writeMessage': {
           setIsTyping(false)
+          // Son UI
+          if (step.side === 'outgoing') playSound('sendMessage')
+          else                          playSound('receiveMessage')
+          // Lecture vocale
+          if (step.msgType === 'vocal' && step.storagePath) {
+            getVocalBlobUrl(step.storagePath).then(url => playVocal(url)).catch(() => {})
+          }
           setBubbles(prev => [...prev, {
             id:            step.id,
             side:          step.side,
@@ -524,9 +578,15 @@ export default function TransparentEdition({ onChangeMode }) {
           }])
           timerRef.current = setTimeout(() => playNext(idx + 1), 400)
           break
+        }
 
         case 'wait':
           timerRef.current = setTimeout(() => playNext(idx + 1), step.duration ?? 1000)
+          break
+
+        case 'blockContact':
+          setBubbles(prev => [...prev, { id: step.id, side: 'outgoing', type: 'block', isNew: true }])
+          timerRef.current = setTimeout(() => playNext(idx + 1), 600)
           break
 
         default:
@@ -667,18 +727,25 @@ export default function TransparentEdition({ onChangeMode }) {
       {exportModal && !isExporting && (
         <ExportModal
           onClose={() => setExportModal(false)}
-          onExport={async (format) => {
+          onExport={async (format, mix) => {
             setExportModal(false)
             setIsExporting(true)
-            setExportMsg('Connexion au serveur…')
+            setExportMsg('Préparation du manifest audio…')
             const ext = format === 'prores' ? 'mov' : 'webm'
 
             try {
+              // 0. Manifest audio — URLs signées résolues côté client
+              const audioManifest = await buildAudioManifest(steps, mix).catch(err => {
+                console.warn('[export] Manifest audio partiel :', err.message)
+                return null
+              })
+
               // 1. Démarre le job — le serveur répond immédiatement avec { jobId }
+              setExportMsg('Connexion au serveur…')
               const startRes = await fetch('http://localhost:3001/export-transparent', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ steps, format, glass }),
+                body:    JSON.stringify({ steps, format, glass, audioManifest }),
               })
               if (!startRes.ok) {
                 const err = await startRes.json().catch(() => ({ error: startRes.statusText }))
@@ -713,7 +780,7 @@ export default function TransparentEdition({ onChangeMode }) {
               setExportMsg('Téléchargement en cours…')
               const a = document.createElement('a')
               a.href     = `http://localhost:3001/export-transparent/download/${jobId}`
-              a.download = `transparent.${ext}`
+              a.download = `transparent_${slugTitle(storyTitle)}.${ext}`
               a.click()
 
             } catch (err) {
@@ -731,9 +798,13 @@ export default function TransparentEdition({ onChangeMode }) {
   )
 }
 
-// ─── Modal de sélection du format d'export ────────────────────────────────────
+// ─── Modal d'export — format + mixage audio ───────────────────────────────────
 
 function ExportModal({ onClose, onExport }) {
+  const [sfx,    setSfx]    = useState(getSfxVolume())
+  const [vocals, setVocals] = useState(getVocalsVolume())
+  const [master, setMaster] = useState(1.0)
+
   const FORMATS = [
     {
       id:    'webm',
@@ -751,6 +822,25 @@ function ExportModal({ onClose, onExport }) {
     },
   ]
 
+  const handleSfxChange = v => { setSfx(v); setSfxVolume(v) }
+  const handleVocChange  = v => { setVocals(v); setVocalsVolume(v) }
+
+  const VolumeSlider = ({ label, value, onChange, color = '#d9571d' }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#636366' }}>{label}</span>
+        <span style={{ fontSize: 11, color: '#8E8E93', fontVariantNumeric: 'tabular-nums' }}>
+          {Math.round(value * 100)}%
+        </span>
+      </div>
+      <input
+        type="range" min={0} max={1} step={0.01} value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        style={{ width: '100%', accentColor: color, height: 4, cursor: 'pointer' }}
+      />
+    </div>
+  )
+
   return (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.55)',
@@ -758,24 +848,36 @@ function ExportModal({ onClose, onExport }) {
       onClick={onClose}
     >
       <div
-        style={{ background: '#fff', borderRadius: 20, padding: '28px 28px 24px', width: 440,
+        style={{ background: '#fff', borderRadius: 20, padding: '28px 28px 24px', width: 460,
           boxShadow: '0 24px 80px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 20 }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Titre */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <p style={{ fontSize: 16, fontWeight: 700, color: '#1c1c1e', marginBottom: 2 }}>Format d'export</p>
-            <p style={{ fontSize: 12, color: '#8E8E93' }}>Choisissez le format avec canal alpha</p>
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#1c1c1e', marginBottom: 2 }}>Export transparent</p>
+            <p style={{ fontSize: 12, color: '#8E8E93' }}>Format + mixage audio</p>
           </div>
           <button onClick={onClose} style={{ color: '#8E8E93', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
             <XIcon size={18} />
           </button>
         </div>
 
+        {/* ── Mixage ── */}
+        <div style={{ background: '#f9f9f9', borderRadius: 14, padding: '16px 18px',
+          border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: '#1c1c1e', textTransform: 'uppercase',
+            letterSpacing: '0.08em', marginBottom: 2 }}>Mixage audio</p>
+          <VolumeSlider label="Sons UI (dings, notifications)"  value={sfx}    onChange={handleSfxChange} color="#5856D6" />
+          <VolumeSlider label="Notes vocales"                   value={vocals} onChange={handleVocChange}  color="#25D366" />
+          <VolumeSlider label="Master"                          value={master} onChange={setMaster}       color="#d9571d" />
+        </div>
+
+        {/* ── Formats ── */}
         {FORMATS.map(({ id, label, ext, desc, color }) => (
           <button
             key={id}
-            onClick={() => onExport(id)}
+            onClick={() => onExport(id, { sfx, vocals, master })}
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 14, textAlign: 'left',
               padding: '16px 18px', borderRadius: 14,

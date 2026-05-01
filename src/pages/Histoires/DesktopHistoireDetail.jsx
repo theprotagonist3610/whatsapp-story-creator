@@ -11,6 +11,7 @@ import {
   FilmSlateIcon,
   StickerIcon,
   MicrophoneIcon,
+  ImageIcon,
   PlayIcon,
   PauseIcon,
   XIcon,
@@ -28,8 +29,27 @@ import {
   uploadVocalFile,
   getVocalBlobUrl,
   deleteVocalFile,
+  uploadPhotoFile,
+  getPhotoBlobUrl,
+  deletePhotoFile,
 } from '../../lib/supabase.js'
 import { LOCAL_STICKERS, getStickerUrl, getLocalUrl, listRemoteStickers } from '../../lib/stickers.js'
+
+// ─── Helpers photos ───────────────────────────────────────────────────────────
+
+const PHOTO_RE = /^\[photo:(.+)\]$/
+
+export function isPhotoText(text) {
+  return PHOTO_RE.test(text?.trim() ?? '')
+}
+
+export function photoPath(text) {
+  return text?.trim().match(PHOTO_RE)?.[1] ?? null
+}
+
+export function photoText(path) {
+  return `[photo:${path}]`
+}
 
 // ─── Helpers stickers ─────────────────────────────────────────────────────────
 
@@ -49,7 +69,8 @@ function stickerUrl(filename) {
 
 // ─── Helpers vocals ───────────────────────────────────────────────────────────
 
-const VOCAL_RE = /^\[vocal:(.+):(\d+(?:\.\d+)?)\]$/
+// Format : [vocal:<path>:<duration>] ou [vocal:<path>:<duration>]:<subtitle>
+const VOCAL_RE = /^\[vocal:(.+):(\d+(?:\.\d+)?)\](?::(.*))?$/
 
 export function isVocalText(text) {
   return VOCAL_RE.test(text?.trim() ?? '')
@@ -64,8 +85,22 @@ export function vocalDuration(text) {
   return raw ? parseFloat(raw) : 0
 }
 
-export function vocalText(path, duration) {
-  return `[vocal:${path}:${duration.toFixed(1)}]`
+// ─── Helper message supprimé ──────────────────────────────────────────────────
+
+/** Vrai si le texte est un message supprimé WhatsApp. */
+export function isDeletedText(text) {
+  return text?.trim() === '[deleted]'
+}
+
+/** Retourne le sous-titre associé à la note vocale ('' si absent). */
+export function vocalSubtitle(text) {
+  return text?.trim().match(VOCAL_RE)?.[3] ?? ''
+}
+
+/** Construit le texte du message vocal, sous-titre optionnel. */
+export function vocalText(path, duration, subtitle = '') {
+  const base = `[vocal:${path}:${duration.toFixed(1)}]`
+  return subtitle.trim() ? `${base}:${subtitle.trim()}` : base
 }
 
 function fmtDuration(secs) {
@@ -252,6 +287,31 @@ const BARS = Array.from({ length: 28 }, (_, i) => {
   return heights[i % heights.length]
 })
 
+// ─── Bulle message supprimé ───────────────────────────────────────────────────
+
+function DeletedBubble({ isOut }) {
+  return (
+    <div style={{
+      backgroundColor: isOut ? '#DCF8C6' : '#ffffff',
+      borderRadius:    isOut ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+      padding:         '8px 14px',
+      boxShadow:       '0 1px 2px rgba(0,0,0,0.1)',
+      display:         'flex',
+      alignItems:      'center',
+      gap:             8,
+      minWidth:        160,
+      maxWidth:        280,
+    }}>
+      <span style={{ fontSize: 15, color: '#8E8E93' }}>⊘</span>
+      <span style={{ fontSize: 13, color: '#8E8E93', fontStyle: 'italic' }}>
+        Ce message a été supprimé.
+      </span>
+    </div>
+  )
+}
+
+// ─── Bulle note vocale ────────────────────────────────────────────────────────
+
 function VocalBubble({ message, isOut, onUpdate, onDelete }) {
   const [playing,    setPlaying]    = useState(false)
   const [signedUrl,  setSignedUrl]  = useState(null)
@@ -261,6 +321,7 @@ function VocalBubble({ message, isOut, onUpdate, onDelete }) {
   const blobUrlRef                  = useRef(null)
   const path                        = vocalPath(message.text)
   const duration                    = vocalDuration(message.text)
+  const subtitle                    = vocalSubtitle(message.text)
 
   // Révoquer la blob URL à la destruction pour éviter les fuites mémoire
   useEffect(() => {
@@ -383,6 +444,96 @@ function VocalBubble({ message, isOut, onUpdate, onDelete }) {
           }}
         />
       </div>
+
+      {/* Sous-titre */}
+      <input
+        type="text"
+        value={subtitle}
+        placeholder="Sous-titre (optionnel)"
+        onChange={(e) => onUpdate({ text: vocalText(path, duration, e.target.value) })}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          fontSize: 11,
+          color: '#555',
+          background: 'rgba(0,0,0,0.04)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          borderRadius: 6,
+          padding: '3px 7px',
+          width: '100%',
+          outline: 'none',
+          marginTop: 2,
+          boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── Bulle photo ──────────────────────────────────────────────────────────────
+
+function PhotoBubble({ message, isOut, onUpdate, onDelete, storyId, onReplace }) {
+  const path           = photoPath(message.text)
+  const [url, setUrl]  = useState(null)
+
+  useEffect(() => {
+    if (!path) return
+    let revoked = false
+    getPhotoBlobUrl(path)
+      .then(blobUrl => { if (!revoked) setUrl(blobUrl) })
+      .catch(() => {})
+    return () => { revoked = true }
+  }, [path])
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        borderRadius: isOut ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+        overflow: 'hidden',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+        maxWidth: 220,
+        cursor: 'pointer',
+      }}
+      onClick={onReplace}
+      title="Cliquer pour remplacer la photo"
+    >
+      {url ? (
+        <img
+          src={url}
+          alt="photo"
+          style={{ width: '100%', maxHeight: 260, objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        <div style={{
+          width: 180, height: 140, backgroundColor: '#ddd',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <ImageIcon size={32} color="#999" />
+        </div>
+      )}
+
+      {/* Heure en overlay bas-droite */}
+      <div style={{
+        position: 'absolute', bottom: 6, right: 8,
+        display: 'flex', alignItems: 'center', gap: 3,
+      }}>
+        <div style={{
+          background: 'rgba(0,0,0,0.4)', borderRadius: 6,
+          padding: '1px 5px',
+        }}>
+          <input
+            type="text"
+            value={message.sentAt}
+            onChange={(e) => onUpdate({ sentAt: e.target.value })}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              fontSize: 10, color: '#fff', background: 'transparent',
+              border: 'none', outline: 'none', textAlign: 'right',
+              width: 32, cursor: 'text', padding: 0,
+            }}
+          />
+        </div>
+      </div>
     </div>
   )
 }
@@ -390,18 +541,22 @@ function VocalBubble({ message, isOut, onUpdate, onDelete }) {
 // ─── Bulle éditable ───────────────────────────────────────────────────────────
 
 function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
-  const [editing,       setEditing]       = useState(false)
-  const [draft,         setDraft]         = useState(message.text)
-  const [stickerOpen,   setStickerOpen]   = useState(false)
-  const [vocalUploading,setVocalUploading]= useState(false)
-  const vocalInputRef                     = useRef()
-  const taRef                             = useRef()
-  const isOut                             = message.side === 'outgoing'
-  const perso                             = isOut ? null : findChar(characters, message.characterId)
-  const isSticker                         = isStickerText(message.text)
-  const isVocal                           = isVocalText(message.text)
+  const [editing,        setEditing]        = useState(false)
+  const [draft,          setDraft]          = useState(message.text)
+  const [stickerOpen,    setStickerOpen]    = useState(false)
+  const [vocalUploading, setVocalUploading] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const vocalInputRef                       = useRef()
+  const photoInputRef                       = useRef()
+  const taRef                               = useRef()
+  const isOut                               = message.side === 'outgoing'
+  const perso                               = isOut ? null : findChar(characters, message.characterId)
+  const isSticker                           = isStickerText(message.text)
+  const isVocal                             = isVocalText(message.text)
+  const isPhoto                             = isPhotoText(message.text)
+  const isDeleted                           = isDeletedText(message.text)
 
-  useEffect(() => { if (editing && !isSticker && !isVocal) taRef.current?.focus() }, [editing, isSticker, isVocal])
+  useEffect(() => { if (editing && !isSticker && !isVocal && !isPhoto && !isDeleted) taRef.current?.focus() }, [editing, isSticker, isVocal, isPhoto, isDeleted])
 
   const commit = () => {
     const t = draft.trim()
@@ -421,9 +576,10 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
     if (!file) return
     setVocalUploading(true)
     try {
-      const duration = await readAudioDuration(file)
-      const path     = await uploadVocalFile(storyId, file)
-      onUpdate({ text: vocalText(path, duration) })
+      const duration         = await readAudioDuration(file)
+      const path             = await uploadVocalFile(storyId, file)
+      const existingSubtitle = vocalSubtitle(message.text)   // préserve le sous-titre
+      onUpdate({ text: vocalText(path, duration, existingSubtitle) })
     } catch (err) {
       console.error('Upload vocal échoué', err)
     } finally {
@@ -433,28 +589,47 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
   }
 
   const replaceVocal = () => vocalInputRef.current?.click()
+  const replacePhoto = () => photoInputRef.current?.click()
+
+  const handlePhotoFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPhotoUploading(true)
+    try {
+      const path = await uploadPhotoFile(storyId, file)
+      onUpdate({ text: photoText(path) })
+    } catch (err) {
+      console.error('Upload photo échoué', err)
+    } finally {
+      setPhotoUploading(false)
+      e.target.value = ''
+    }
+  }
 
   return (
     <>
-      {/* Input fichier caché pour upload vocal */}
-      <input
-        ref={vocalInputRef}
-        type="file"
-        accept="audio/*"
-        style={{ display: 'none' }}
-        onChange={handleVocalFile}
-      />
+      {/* Inputs fichiers cachés */}
+      <input ref={vocalInputRef} type="file" accept="audio/*"
+        style={{ display: 'none' }} onChange={handleVocalFile} />
+      <input ref={photoInputRef} type="file" accept="image/*"
+        style={{ display: 'none' }} onChange={handlePhotoFile} />
 
       <div className={`flex items-end gap-2 group ${isOut ? 'flex-row-reverse' : 'flex-row'}`}>
         {!isOut && <AvatarMini personnage={perso} size={28} />}
 
         {/* Bulle */}
-        {isVocal ? (
-          <VocalBubble
+        {isDeleted ? (
+          <DeletedBubble isOut={isOut} />
+        ) : isVocal ? (
+          <VocalBubble message={message} isOut={isOut} onUpdate={onUpdate} onDelete={onDelete} />
+        ) : isPhoto ? (
+          <PhotoBubble
             message={message}
             isOut={isOut}
+            storyId={storyId}
             onUpdate={onUpdate}
             onDelete={onDelete}
+            onReplace={replacePhoto}
           />
         ) : (
           <div
@@ -569,7 +744,7 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
 
         {/* Actions groupe */}
         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {!isSticker && !isVocal && (
+          {!isSticker && !isVocal && !isPhoto && !isDeleted && (
             <button
               onClick={() => setStickerOpen(true)}
               className="p-1.5 text-gray-300 hover:text-brand-orange hover:scale-125 rounded-lg transition-all shrink-0"
@@ -578,7 +753,7 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
               <StickerIcon size={14} />
             </button>
           )}
-          {!isSticker && (
+          {!isSticker && !isPhoto && !isDeleted && (
             <button
               onClick={replaceVocal}
               disabled={vocalUploading}
@@ -588,6 +763,19 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
               {vocalUploading
                 ? <SpinnerIcon size={14} className="animate-spin" />
                 : <MicrophoneIcon size={14} />
+              }
+            </button>
+          )}
+          {!isSticker && !isVocal && !isDeleted && (
+            <button
+              onClick={replacePhoto}
+              disabled={photoUploading}
+              className="p-1.5 text-gray-300 hover:text-[#5856D6] hover:scale-125 rounded-lg transition-all shrink-0"
+              title={isPhoto ? 'Remplacer la photo' : 'Convertir en photo'}
+            >
+              {photoUploading
+                ? <SpinnerIcon size={14} className="animate-spin" />
+                : <ImageIcon size={14} />
               }
             </button>
           )}
@@ -612,53 +800,243 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
 
 // ─── Bouton + entre messages ──────────────────────────────────────────────────
 
-function AddMessageButton({ thread, characters, onAdd }) {
-  const [open, setOpen] = useState(false)
-  const perso           = findChar(characters, thread.characterId)
-  const drka            = drKA(characters)
+function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
+  const [mode,        setMode]        = useState(null)   // null | 'choose' | 'vocal' | 'deleted'
+  const [vocalSide,   setVocalSide]   = useState('incoming')
+  const [vocalFile,   setVocalFile]   = useState(null)
+  const [subtitle,    setSubtitle]    = useState('')
+  const [uploading,   setUploading]   = useState(false)
+  const [deletedSide, setDeletedSide] = useState('incoming')
+  const [deletedMsg,  setDeletedMsg]  = useState('')
+  const fileInputRef = useRef()
 
-  const add = (side) => {
-    onAdd({ side, characterId: side === 'incoming' ? thread.characterId : null })
-    setOpen(false)
+  const perso = findChar(characters, thread.characterId)
+  const drka  = drKA(characters)
+
+  const close = () => {
+    setMode(null)
+    setVocalFile(null)
+    setSubtitle('')
+    setUploading(false)
+    setDeletedMsg('')
+    setDeletedSide('incoming')
   }
 
-  return (
-    <div className="flex justify-center items-center py-1 relative">
-      {open ? (
-        <div className="flex items-center gap-2 bg-white rounded-full shadow-md px-3 py-1.5 border border-gray-100">
-          <button
-            onClick={() => add('incoming')}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-brand-orange transition-colors"
-          >
-            <AvatarMini personnage={perso} size={20} />
-            {perso?.nom ?? 'Contact'}
-          </button>
-          <span className="text-gray-200 text-sm">|</span>
-          <button
-            onClick={() => add('outgoing')}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-brand-orange transition-colors"
-          >
-            {drka?.nom ?? 'Dr KA'}
-            <AvatarMini personnage={drka} size={20} />
-          </button>
-          <span className="text-gray-200 text-sm">|</span>
-          <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-500 text-xs">×</button>
-        </div>
-      ) : (
+  const addSimple = (side) => {
+    onAdd({ side, characterId: side === 'incoming' ? thread.characterId : null })
+    close()
+  }
+
+  const submitDeleted = () => {
+    const cid = deletedSide === 'incoming' ? thread.characterId : null
+    onAddTwo(
+      { side: deletedSide, characterId: cid, text: '[deleted]' },
+      { side: deletedSide, characterId: cid, text: deletedMsg }
+    )
+    close()
+  }
+
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0]
+    if (f) setVocalFile(f)
+    e.target.value = ''
+  }
+
+  const submitVocal = async () => {
+    if (!vocalFile || uploading) return
+    setUploading(true)
+    try {
+      const duration = await readAudioDuration(vocalFile)
+      const path     = await uploadVocalFile(storyId, vocalFile)
+      const text     = vocalText(path, duration, subtitle)
+      const cid      = vocalSide === 'incoming' ? thread.characterId : null
+      onAdd({ side: vocalSide, characterId: cid, text })
+      close()
+    } catch (err) {
+      console.error('Upload vocal échoué', err)
+      setUploading(false)
+    }
+  }
+
+  // ── Fermé ────────────────────────────────────────────────────────────────────
+  if (mode === null) {
+    return (
+      <div className="flex justify-center items-center py-1">
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => setMode('choose')}
           className="opacity-0 group-hover/zone:opacity-100 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-brand-orange hover:border-brand-orange transition-all"
         >
           <PlusIcon size={12} weight="bold" />
         </button>
-      )}
+      </div>
+    )
+  }
+
+  // ── Choix du type ────────────────────────────────────────────────────────────
+  if (mode === 'choose') {
+    return (
+      <div className="flex justify-center items-center py-1.5">
+        <div className="flex flex-col items-center gap-2 bg-white rounded-2xl shadow-md px-3 py-2.5 border border-gray-100">
+          {/* Ligne 1 : message simple */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => addSimple('incoming')}
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-brand-orange transition-colors"
+            >
+              <AvatarMini personnage={perso} size={20} />
+              {perso?.nom ?? 'Contact'}
+            </button>
+            <span className="text-gray-200 text-sm">|</span>
+            <button
+              onClick={() => addSimple('outgoing')}
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-brand-orange transition-colors"
+            >
+              {drka?.nom ?? 'Dr KA'}
+              <AvatarMini personnage={drka} size={20} />
+            </button>
+          </div>
+          {/* Séparateur */}
+          <div className="w-full h-px bg-gray-100" />
+          {/* Ligne 2 : helpers + fermer */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMode('vocal')}
+              className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              <MicrophoneIcon size={11} />
+              Vocal + sous-titre
+            </button>
+            <span className="text-gray-200 text-sm">|</span>
+            <button
+              onClick={() => setMode('deleted')}
+              className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              <XIcon size={11} />
+              Supprimé
+            </button>
+            <span className="text-gray-200 text-sm">|</span>
+            <button onClick={close} className="text-gray-300 hover:text-gray-500 text-xs">×</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Helper : message supprimé ────────────────────────────────────────────────
+  if (mode === 'deleted') {
+    return (
+      <div className="flex justify-center items-center py-1.5">
+        <div className="flex flex-col gap-2 bg-white rounded-2xl shadow-md px-4 py-3 border border-gray-100" style={{ minWidth: 280 }}>
+          {/* En-tête */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+              <XIcon size={12} /> Message supprimé
+            </span>
+            <button onClick={close} className="text-gray-300 hover:text-gray-500 text-xs">×</button>
+          </div>
+          {/* Sélecteur de côté */}
+          <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-0.5">
+            <button
+              onClick={() => setDeletedSide('incoming')}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${deletedSide === 'incoming' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <AvatarMini personnage={perso} size={16} />
+              {perso?.nom ?? 'Contact'}
+            </button>
+            <button
+              onClick={() => setDeletedSide('outgoing')}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${deletedSide === 'outgoing' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {drka?.nom ?? 'Dr KA'}
+              <AvatarMini personnage={drka} size={16} />
+            </button>
+          </div>
+          {/* Second message */}
+          <input
+            type="text"
+            value={deletedMsg}
+            onChange={(e) => setDeletedMsg(e.target.value)}
+            placeholder="Second message (optionnel)"
+            className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-gray-400 transition-colors"
+          />
+          {/* Valider */}
+          <button
+            onClick={submitDeleted}
+            className="flex items-center justify-center gap-1.5 text-xs font-semibold text-white rounded-lg py-2 transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#636366' }}
+          >
+            <XIcon size={12} /> Créer le message supprimé
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Helper : vocal + sous-titre ──────────────────────────────────────────────
+  return (
+    <div className="flex justify-center items-center py-1.5">
+      <div className="flex flex-col gap-2 bg-white rounded-2xl shadow-md px-4 py-3 border border-gray-100" style={{ minWidth: 280 }}>
+        {/* En-tête */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-indigo-600 flex items-center gap-1">
+            <MicrophoneIcon size={12} /> Vocal + sous-titre
+          </span>
+          <button onClick={close} className="text-gray-300 hover:text-gray-500 text-xs">×</button>
+        </div>
+        {/* Sélecteur de côté */}
+        <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-0.5">
+          <button
+            onClick={() => setVocalSide('incoming')}
+            className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${vocalSide === 'incoming' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <AvatarMini personnage={perso} size={16} />
+            {perso?.nom ?? 'Contact'}
+          </button>
+          <button
+            onClick={() => setVocalSide('outgoing')}
+            className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${vocalSide === 'outgoing' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            {drka?.nom ?? 'Dr KA'}
+            <AvatarMini personnage={drka} size={16} />
+          </button>
+        </div>
+        {/* Sélecteur de fichier */}
+        <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileChange} />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 hover:bg-gray-100 border border-dashed border-gray-200 rounded-lg px-3 py-2 transition-colors text-left"
+        >
+          <MicrophoneIcon size={14} className="text-indigo-400 shrink-0" />
+          <span className="truncate">{vocalFile ? vocalFile.name : 'Choisir un fichier audio…'}</span>
+        </button>
+        {/* Sous-titre */}
+        <input
+          type="text"
+          value={subtitle}
+          onChange={(e) => setSubtitle(e.target.value)}
+          placeholder="Sous-titre (optionnel)"
+          className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-indigo-300 transition-colors"
+        />
+        {/* Valider */}
+        <button
+          onClick={submitVocal}
+          disabled={!vocalFile || uploading}
+          className="flex items-center justify-center gap-1.5 text-xs font-semibold text-white rounded-lg py-2 transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ backgroundColor: '#5856D6' }}
+        >
+          {uploading
+            ? <><SpinnerIcon size={12} className="animate-spin" /> Envoi…</>
+            : <><MicrophoneIcon size={12} /> Créer la note vocale</>
+          }
+        </button>
+      </div>
     </div>
   )
 }
 
 // ─── Zone messages du fil ─────────────────────────────────────────────────────
 
-function ThreadEditor({ thread, characters, storyId, onAddMessage, onUpdateMessage, onDeleteMessage }) {
+function ThreadEditor({ thread, characters, storyId, onAddMessage, onUpdateMessage, onDeleteMessage, onAddTwoMessages }) {
   const bottomRef = useRef()
 
   useEffect(() => {
@@ -675,11 +1053,19 @@ function ThreadEditor({ thread, characters, storyId, onAddMessage, onUpdateMessa
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2">
             <ChatCircleIcon size={36} weight="thin" />
             <p className="text-sm">Aucun message</p>
-            <AddMessageButton thread={thread} characters={characters} onAdd={(p) => onAddMessage(0, p)} />
+            <AddMessageButton
+              thread={thread} characters={characters} storyId={storyId}
+              onAdd={(p) => onAddMessage(0, p)}
+              onAddTwo={(m1, m2) => onAddTwoMessages(0, m1, m2)}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            <AddMessageButton thread={thread} characters={characters} onAdd={(p) => onAddMessage(0, p)} />
+            <AddMessageButton
+              thread={thread} characters={characters} storyId={storyId}
+              onAdd={(p) => onAddMessage(0, p)}
+              onAddTwo={(m1, m2) => onAddTwoMessages(0, m1, m2)}
+            />
 
             {thread.messages.map((m, i) => (
               <div key={m.id}>
@@ -690,7 +1076,11 @@ function ThreadEditor({ thread, characters, storyId, onAddMessage, onUpdateMessa
                   onUpdate={(patch) => onUpdateMessage(m.id, patch)}
                   onDelete={onDeleteMessage}
                 />
-                <AddMessageButton thread={thread} characters={characters} onAdd={(p) => onAddMessage(i + 1, p)} />
+                <AddMessageButton
+                  thread={thread} characters={characters} storyId={storyId}
+                  onAdd={(p) => onAddMessage(i + 1, p)}
+                  onAddTwo={(m1, m2) => onAddTwoMessages(i + 1, m1, m2)}
+                />
               </div>
             ))}
           </div>
@@ -842,7 +1232,7 @@ export default function DesktopHistoireDetail() {
 
   // ── Mutations messages ────────────────────────────────────────────────────
 
-  const addMessage = async (index, { side, characterId }) => {
+  const addMessage = async (index, { side, characterId, text = '' }) => {
     try {
       const order = index
       const row   = await dbCreateMessage({
@@ -850,7 +1240,7 @@ export default function DesktopHistoireDetail() {
         order,
         side,
         characterId: characterId ?? null,
-        text:        '',
+        text,
         sentAt:      '09:41',
         status:      'read',
       })
@@ -859,6 +1249,37 @@ export default function DesktopHistoireDetail() {
         if (t.id !== activeThread) return t
         const msgs = [...t.messages]
         msgs.splice(index, 0, msg)
+        return { ...t, messages: msgs }
+      }))
+    } catch (e) { setError(e.message) }
+  }
+
+  const addTwoMessages = async (index, msg1, msg2) => {
+    try {
+      const row1 = await dbCreateMessage({
+        threadId:    activeThread,
+        order:       index,
+        side:        msg1.side,
+        characterId: msg1.characterId ?? null,
+        text:        msg1.text ?? '',
+        sentAt:      '09:41',
+        status:      'read',
+      })
+      const row2 = await dbCreateMessage({
+        threadId:    activeThread,
+        order:       index + 1,
+        side:        msg2.side,
+        characterId: msg2.characterId ?? null,
+        text:        msg2.text ?? '',
+        sentAt:      '09:41',
+        status:      'read',
+      })
+      const m1 = dbToMessage({ ...row1, characterId: row1.character_id })
+      const m2 = dbToMessage({ ...row2, characterId: row2.character_id })
+      setThreads((p) => p.map((t) => {
+        if (t.id !== activeThread) return t
+        const msgs = [...t.messages]
+        msgs.splice(index, 0, m1, m2)
         return { ...t, messages: msgs }
       }))
     } catch (e) { setError(e.message) }
@@ -991,6 +1412,7 @@ export default function DesktopHistoireDetail() {
               onAddMessage={addMessage}
               onUpdateMessage={handleUpdateMessage}
               onDeleteMessage={handleDeleteMessage}
+              onAddTwoMessages={addTwoMessages}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">

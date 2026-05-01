@@ -423,6 +423,47 @@ export const ACTIONS = [
   },
 
   {
+    id:          'receivePhoto',
+    label:       'Recevoir une photo',
+    description: 'Ajoute une bulle photo entrante dans la conversation',
+    category:    'message',
+    color:       '#5856D6',
+    screens:     ['WhatsAppConversation', 'WhatsAppKeyboard'],
+    nextScreen:  null,
+    animation:   { type: 'popIn', duration: 250 },
+    params: {
+      storagePath:   { type: 'string', label: 'Chemin bucket photos', default: '',      required: true  },
+      characterName: { type: 'string', label: 'Nom du personnage',    default: '',      required: false },
+      time:          { type: 'string', label: 'Heure',                default: '09:41', required: false },
+    },
+    sound: 'message_received',
+  },
+
+  {
+    id:          'sendPhoto',
+    label:       'Envoyer une photo',
+    description: 'Ajoute une bulle photo sortante dans la conversation',
+    category:    'message',
+    color:       '#5856D6',
+    screens:     ['WhatsAppConversation', 'WhatsAppKeyboard'],
+    nextScreen:  null,
+    animation:   { type: 'popIn', duration: 250 },
+    params: {
+      storagePath: { type: 'string', label: 'Chemin bucket photos', default: '',      required: true  },
+      time:        { type: 'string', label: 'Heure d\'envoi',       default: '09:41', required: false },
+      status: {
+        type: 'select', label: 'Statut initial', default: 'sent', required: false,
+        options: [
+          { value: 'sent',      label: 'Envoyé (1 coche grise)'  },
+          { value: 'delivered', label: 'Livré  (2 coches grises)' },
+          { value: 'read',      label: 'Lu     (2 coches bleues)' },
+        ],
+      },
+    },
+    sound: 'message_sent',
+  },
+
+  {
     id:          'markAsRead',
     label:       'Marquer comme lu',
     description: 'Les coches des bulles sortantes passent du gris au bleu',
@@ -431,6 +472,19 @@ export const ACTIONS = [
     screens:     ['WhatsAppConversation', 'WhatsAppKeyboard'],
     nextScreen:  null,
     animation:   { type: 'tickBlue', duration: 200 },
+    params:      {},
+    sound:       null,
+  },
+
+  {
+    id:          'blockContact',
+    label:       'Bloquer le contact',
+    description: 'Affiche le bandeau "Vous avez bloqué ce contact" et désactive la saisie',
+    category:    'system',
+    color:       '#FF3B30',
+    screens:     ['WhatsAppConversation', 'WhatsAppKeyboard'],
+    nextScreen:  null,
+    animation:   { type: 'none', duration: 600 },
     params:      {},
     sound:       null,
   },
@@ -521,9 +575,9 @@ export function estimateDuration(actionId, params = {}) {
 
   switch (actionId) {
     case 'writeMessage': {
-      const speeds = { slow: 72, normal: 36, fast: 18 }  // -40%
-      const ms     = speeds[params.speed ?? 'normal'] ?? 36
-      return (params.text?.length ?? 0) * ms + 180  // overhead -40%
+      const speeds = { slow: 72, normal: 36, fast: 18 }
+      const ms     = typeof params.speed === 'number' ? params.speed : (speeds[params.speed ?? 'normal'] ?? 36)
+      return Math.min(4000, (params.text?.length ?? 0) * ms + 180)
     }
     case 'deleteChar':
       return (params.count ?? 1) * 80 + 200

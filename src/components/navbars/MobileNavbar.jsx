@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { Menu, X, LayoutDashboard, BookOpen, PenSquare, Users, LogOut } from 'lucide-react'
+import { Menu, X, LayoutDashboard, BookOpen, PenSquare, Users, Phone, MessageSquare, BookMarked, LogOut } from 'lucide-react'
 import { signOut } from '../../lib/supabase.js'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 
@@ -9,6 +9,9 @@ const NAV_LINKS = [
   { to: '/histoires',   label: 'Histoires',   icon: BookOpen        },
   { to: '/edition',     label: 'Édition',     icon: PenSquare       },
   { to: '/personnages', label: 'Personnages', icon: Users           },
+  { to: '/phonecall',   label: 'Appels',      icon: Phone           },
+  { to: '/discussion',  label: 'Discussion',  icon: MessageSquare   },
+  { to: '/true-story',  label: 'True Story',  icon: BookMarked      },
 ]
 
 export default function MobileNavbar() {

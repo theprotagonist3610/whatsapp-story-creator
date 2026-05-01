@@ -81,6 +81,11 @@ export default function HeadlessTransparent() {
           await sleep(step.duration ?? 1000)
           break
 
+        case 'blockContact':
+          setBubbles(prev => [...prev, { id: step.id, side: 'outgoing', type: 'block', isNew: true }])
+          await sleep(600)
+          break
+
         default:
           break
       }
