@@ -47,9 +47,14 @@ export function getCallerInfo(threads) {
 
 /**
  * Construit la liste ordonnée des vocaux à jouer.
- * Chaque item : { storagePath, duration (s), side, blobUrl (null au départ) }
+ * Chaque item : { storagePath, duration (s), side, characterName, characterColor, blobUrl }
+ *
+ * @param {Array} threads   — résultat de getThreads()
+ * @param {Array} characters — résultat de getCharacters() (optionnel, pour résoudre les persos par message)
  */
-export function buildSequence(threads) {
+export function buildSequence(threads, characters = []) {
+  const drka = characters.find(c => c.is_default) ?? null
+
   return threads
     .slice()
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -57,15 +62,28 @@ export function buildSequence(threads) {
       (t.messages ?? [])
         .slice()
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .map(m => ({
-          storagePath:    vocalPath(m.text),
-          duration:       vocalDuration(m.text),
-          subtitle:       vocalSubtitle(m.text),
-          side:           m.side,
-          characterName:  t.character_name  ?? '',
-          characterColor: t.character_color ?? '#25D366',
-          blobUrl:        null,
-        }))
+        .map(m => {
+          let characterName, characterColor
+          if (m.side === 'outgoing') {
+            // Côté Dr KA — toujours le personnage par défaut
+            characterName  = drka?.name         ?? 'Dr KA'
+            characterColor = drka?.bubble_color ?? '#d9571d'
+          } else {
+            // Côté entrant — résoudre via characterId du message, fallback sur le perso du fil
+            const perso   = m.characterId ? (characters.find(c => c.id === m.characterId) ?? null) : null
+            characterName  = perso?.name         ?? t.character_name  ?? ''
+            characterColor = perso?.bubble_color ?? t.character_color ?? '#25D366'
+          }
+          return {
+            storagePath: vocalPath(m.text),
+            duration:    vocalDuration(m.text),
+            subtitle:    vocalSubtitle(m.text),
+            side:        m.side,
+            characterName,
+            characterColor,
+            blobUrl:     null,
+          }
+        })
     )
 }
 

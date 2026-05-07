@@ -22,10 +22,11 @@ const TRANS_FADE_MS    = 300   // durée CSS du fondu de l'overlay
  * @param {{ transitionDuration?: number }} options
  */
 export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } = {}) {
-  const [phase,              setPhase]              = useState('idle')
-  const [currentSubtitle,    setCurrentSubtitle]    = useState('')
-  const [currentSpeakerName, setCurrentSpeakerName] = useState('')
-  const [transitioning,      setTransitioning]      = useState(false)
+  const [phase,               setPhase]               = useState('idle')
+  const [currentSubtitle,     setCurrentSubtitle]     = useState('')
+  const [currentSpeakerName,  setCurrentSpeakerName]  = useState('')
+  const [currentSpeakerColor, setCurrentSpeakerColor] = useState('')
+  const [transitioning,       setTransitioning]       = useState(false)
   const [elapsed,            setElapsed]            = useState(0)
   const [sequence,           setSequence]           = useState(initialSequence ?? [])
   const [blobsReady,         setBlobsReady]         = useState(false)
@@ -104,6 +105,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
     const item = seq[idx]
     setCurrentSubtitle(item.subtitle ?? '')
     setCurrentSpeakerName(item.speakerName ?? '')
+    setCurrentSpeakerColor(item.speakerColor ?? '')
 
     if (item.blobUrl) {
       const howl = new Howl({
@@ -113,6 +115,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
         onend: () => {
           setCurrentSubtitle('')
           setCurrentSpeakerName('')
+          setCurrentSpeakerColor('')
           _afterItem(idx + 1)
         },
         onstop: () => {},
@@ -123,6 +126,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
       timerRef.current = setTimeout(() => {
         setCurrentSubtitle('')
         setCurrentSpeakerName('')
+        setCurrentSpeakerColor('')
         _afterItem(idx + 1)
       }, Math.round(item.duration * 1000) || 1000)
     }
@@ -161,6 +165,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
     setElapsed(0)
     setCurrentSubtitle('')
     setCurrentSpeakerName('')
+    setCurrentSpeakerColor('')
     setTransitioning(false)
     setPhase('active')
     _startTimer()
@@ -173,6 +178,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
     setPhase('ready')
     setCurrentSubtitle('')
     setCurrentSpeakerName('')
+    setCurrentSpeakerColor('')
     setTransitioning(false)
     setElapsed(0)
   }
@@ -185,7 +191,7 @@ export function useDiscussionPlayer(initialSequence, { transitionDuration = 0 } 
   const canPlay   = phase === 'ready'
 
   return {
-    phase, currentSubtitle, currentSpeakerName, transitioning,
+    phase, currentSubtitle, currentSpeakerName, currentSpeakerColor, transitioning,
     elapsed, sequence, blobsReady, error,
     isLoading, isPlaying, isDone, canPlay,
     preloadBlobs, startDiscussion, resetDiscussion,

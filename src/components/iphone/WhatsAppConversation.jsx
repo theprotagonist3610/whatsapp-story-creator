@@ -432,8 +432,10 @@ function PhotoChatBubble({ text, time, status, isOutgoing, isNew, characterName 
       {!isOutgoing && characterName && (
         <div style={{
           position: 'absolute', top: 6, left: 8, zIndex: 2,
-          fontSize: 11, fontWeight: 600, color: '#fff',
-          textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+          fontSize: 11, fontWeight: 700, color: '#fff',
+          backgroundColor: 'rgba(0,0,0,0.48)',
+          borderRadius: 6, padding: '2px 7px',
+          backdropFilter: 'blur(2px)',
         }}>
           {characterName}
         </div>

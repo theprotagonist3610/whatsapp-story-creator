@@ -43,6 +43,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 export default function HeadlessDiscussionTransparent() {
   const [subtitle,           setSubtitle]           = useState('')
   const [speakerName,        setSpeakerName]        = useState('')
+  const [speakerColor,       setSpeakerColor]       = useState('')
   const [transitioning,      setTransitioning]      = useState(false)
   const [subtitleMode,       setSubtitleMode]       = useState('plein')
   const [bgOpacity,          setBgOpacity]          = useState(0.50)
@@ -108,9 +109,11 @@ export default function HeadlessDiscussionTransparent() {
       const item = sequence[i]
       setSubtitle(item.subtitle ?? '')
       setSpeakerName(item.speakerName ?? '')
+      setSpeakerColor(item.speakerColor ?? '')
       await sleep(Math.max(500, Math.round(item.duration * 1000)))
       setSubtitle('')
       setSpeakerName('')
+      setSpeakerColor('')
 
       if (i < sequence.length - 1) {
         if (transDur > 0) {
@@ -161,6 +164,7 @@ export default function HeadlessDiscussionTransparent() {
           <DiscussionOverlay
             subtitle={subtitle}
             speakerName={speakerName}
+            speakerColor={speakerColor}
             subtitleMode={subtitleMode}
             bgMode="transparent"
             bgOpacity={bgOpacity}

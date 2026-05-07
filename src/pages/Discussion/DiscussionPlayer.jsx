@@ -8,7 +8,7 @@ import {
   SpinnerIcon, DownloadSimpleIcon, WarningIcon,
   TextBIcon, TextItalicIcon,
 } from '@phosphor-icons/react'
-import { getStory, getThreads, getVocalSignedUrl } from '../../lib/supabase.js'
+import { getStory, getThreads, getCharacters, getVocalSignedUrl } from '../../lib/supabase.js'
 import {
   isCallEligible, buildSequence, getCallerInfo, getInitials,
   fmtElapsed, estimateTotalSecs,
@@ -94,7 +94,11 @@ export default function DiscussionPlayer() {
 
     async function load() {
       try {
-        const [s, threads] = await Promise.all([getStory(storyId), getThreads(storyId)])
+        const [s, threads, characters] = await Promise.all([
+          getStory(storyId),
+          getThreads(storyId),
+          getCharacters(storyId),
+        ])
         if (cancelled) return
         if (!isCallEligible(threads ?? [])) {
           setLoadErr('Cette histoire n\'est pas éligible — tous les messages doivent être des notes vocales.')
@@ -104,23 +108,25 @@ export default function DiscussionPlayer() {
         const callerInfo = getCallerInfo(threads ?? [])
         setCaller(callerInfo)
 
-        // Tous les personnages non-Dr-KA (dédupliqués, ordonnés)
-        const seen = new Set()
-        const allSpeakers = (threads ?? [])
-          .filter(t => t.character_name && t.character_name !== 'Dr KA')
-          .filter(t => { if (seen.has(t.character_name)) return false; seen.add(t.character_name); return true })
-          .map(t => ({
-            name:      t.character_name,
-            color:     t.character_color      ?? '#25D366',
-            initials:  getInitials(t.character_name),
-            avatarUrl: t.character_avatar_url ?? null,
+        // Dédupliquer les persos non-Dr-KA depuis la liste complète des personnages
+        const allSpeakers = (characters ?? [])
+          .filter(c => !c.is_default && c.name !== 'Dr KA')
+          .map(c => ({
+            name:      c.name,
+            color:     c.bubble_color   ?? '#25D366',
+            initials:  getInitials(c.name),
+            avatarUrl: c.avatar_url     ?? null,
           }))
         setSpeakers(allSpeakers)
 
-        setRawSeq(buildSequence(threads ?? []).map(item => ({
-          ...item,
-          speakerName: item.characterName !== 'Dr KA' ? item.characterName : '',
-        })))
+        setRawSeq(buildSequence(threads ?? [], characters ?? []).map(item => {
+          const isKA = !item.characterName || item.characterName === 'Dr KA'
+          return {
+            ...item,
+            speakerName:  isKA ? '' : item.characterName,
+            speakerColor: isKA ? '' : (item.characterColor ?? '#25D366'),
+          }
+        }))
         setDataReady(true)
       } catch (err) {
         if (!cancelled) setLoadErr(err.message)
@@ -134,7 +140,7 @@ export default function DiscussionPlayer() {
   // ── Dérivés ───────────────────────────────────────────────────────────────
 
   const {
-    currentSubtitle, currentSpeakerName, transitioning,
+    currentSubtitle, currentSpeakerName, currentSpeakerColor, transitioning,
     elapsed, sequence, blobsReady,
     isLoading, isPlaying, isDone, canPlay,
     preloadBlobs, startDiscussion, resetDiscussion,
@@ -150,8 +156,11 @@ export default function DiscussionPlayer() {
     ? currentSubtitle
     : (sequence.find(s => s.subtitle?.trim())?.subtitle ?? '')
 
-  const previewSpeakerName = showSpeakerName
+  const previewSpeakerName  = showSpeakerName
     ? (isPlaying ? currentSpeakerName : (sequence.find(s => s.subtitle?.trim())?.speakerName ?? ''))
+    : ''
+  const previewSpeakerColor = showSpeakerName
+    ? (isPlaying ? currentSpeakerColor : (sequence.find(s => s.subtitle?.trim())?.speakerColor ?? ''))
     : ''
 
   // Props de style partagées entre preview et export
@@ -214,6 +223,7 @@ export default function DiscussionPlayer() {
                 <DiscussionOverlay
                   subtitle={previewSubtitle}
                   speakerName={previewSpeakerName}
+                  speakerColor={previewSpeakerColor}
                   subtitleMode={subtitleMode}
                   bgMode={bgMode}
                   bgOpacity={bgOpacity}
@@ -588,35 +598,53 @@ export default function DiscussionPlayer() {
           {sequence.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Séquence vocale</p>
-              <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
-                {sequence.map((item, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
-                    <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
-                      style={{ backgroundColor: item.characterName !== 'Dr KA' ? (item.characterColor ?? '#25D366') : '#d9571d' }}
-                    >
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-gray-600 truncate">
-                        {item.characterName || (item.side === 'incoming' ? caller?.name : 'Dr KA')}
-                      </p>
-                      {item.subtitle?.trim() && (
-                        <p className="text-xs text-indigo-500 truncate mt-0.5 italic">
-                          "{item.subtitle}"
-                        </p>
+              <div className="flex flex-col max-h-72 overflow-y-auto">
+                {sequence.map((item, i) => {
+                  const isKA    = !item.characterName || item.characterName === 'Dr KA'
+                  const spColor = isKA ? '#d9571d' : (item.characterColor ?? '#25D366')
+                  const spName  = isKA ? 'Dr KA' : item.characterName
+                  const spInit  = isKA ? 'KA' : getInitials(item.characterName)
+                  return (
+                    <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                      {/* Avatar personnage + numéro en badge */}
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <div style={{
+                          width: 34, height: 34, borderRadius: '50%',
+                          backgroundColor: spColor,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <span style={{ color: '#fff', fontWeight: 700, fontSize: 12 }}>{spInit}</span>
+                        </div>
+                        <span style={{
+                          position: 'absolute', top: -3, right: -5,
+                          background: '#e5e7eb', borderRadius: '50%',
+                          width: 15, height: 15, fontSize: 9, fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: '#374151', lineHeight: 1,
+                        }}>{i + 1}</span>
+                      </div>
+
+                      {/* Nom + sous-titre */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold truncate" style={{ color: spColor }}>{spName}</p>
+                        {item.subtitle?.trim()
+                          ? <p className="text-xs text-gray-400 truncate italic mt-0.5">"{item.subtitle}"</p>
+                          : <p className="text-xs text-gray-300 mt-0.5">—</p>
+                        }
+                      </div>
+
+                      {/* Durée + statut */}
+                      <span className="text-gray-400 font-mono text-xs shrink-0">
+                        {fmtElapsed(Math.round(item.duration))}
+                      </span>
+                      {blobsReady && (
+                        <span className={`text-xs shrink-0 ${item.blobUrl ? 'text-green-500' : 'text-red-400'}`}>
+                          {item.blobUrl ? '●' : '○'}
+                        </span>
                       )}
                     </div>
-                    <span className="text-gray-400 font-mono text-xs shrink-0">
-                      {fmtElapsed(Math.round(item.duration))}
-                    </span>
-                    {blobsReady && (
-                      <span className={`text-xs shrink-0 ${item.blobUrl ? 'text-green-500' : 'text-red-400'}`}>
-                        {item.blobUrl ? '●' : '○'}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

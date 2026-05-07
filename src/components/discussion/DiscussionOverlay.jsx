@@ -79,6 +79,7 @@ export default function DiscussionOverlay({
   textFont           = 'system',
   animationMode      = 'fade',
   speakerName        = '',
+  speakerColor       = '',
   transitioning      = false,
   width              = 390,
   height             = 844,
@@ -168,21 +169,29 @@ export default function DiscussionOverlay({
 
           {/* Nom du personnage */}
           {displayed && speakerName && (
-            <p style={{
-              color:         textColor,
-              fontSize:      Math.round(fontSize * 0.52),
-              fontWeight:    800,
-              fontFamily:    fontCss,
-              fontStyle:     'normal',
-              lineHeight:    1,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              textShadow:    '0 1px 6px rgba(0,0,0,0.75)',
-              opacity:       0.82,
-              margin:        0,
+            <div style={{
+              display:         'inline-flex',
+              alignItems:      'center',
+              gap:             Math.round(width * 0.018),
+              background:      speakerColor ? speakerColor : 'rgba(0,0,0,0.55)',
+              borderRadius:    Math.round(width * 0.04),
+              padding:         `${Math.round(height * 0.005)}px ${Math.round(width * 0.04)}px`,
+              backdropFilter:  'blur(4px)',
             }}>
-              {speakerName}
-            </p>
+              <p style={{
+                color:         '#ffffff',
+                fontSize:      Math.round(fontSize * 0.48),
+                fontWeight:    800,
+                fontFamily:    fontCss,
+                fontStyle:     'normal',
+                lineHeight:    1,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                margin:        0,
+              }}>
+                {speakerName}
+              </p>
+            </div>
           )}
 
           {/* Pilule de sous-titre */}

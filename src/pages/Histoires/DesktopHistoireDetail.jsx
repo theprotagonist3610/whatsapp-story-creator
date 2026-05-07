@@ -647,7 +647,11 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
           >
             {/* Nom */}
             {!isOut && perso && !isSticker && (
-              <div style={{ fontSize: 11, fontWeight: 600, color: perso.avatarColor ?? '#d9571d', marginBottom: 2 }}>
+              <div style={{
+                display: 'inline-block', fontSize: 10, fontWeight: 700,
+                color: '#fff', backgroundColor: perso.avatarColor ?? '#d9571d',
+                borderRadius: 5, padding: '1px 6px', marginBottom: 3,
+              }}>
                 {perso.nom}
               </div>
             )}

@@ -266,10 +266,11 @@ export default function ExportDiscussionModal({
     if (videoJob.phase === 'running') return
     setVideoJob({ phase: 'running', pct: 0, message: 'Démarrage…', jobId: null })
     try {
-      const seqForVideo = rawSeq.map(({ duration, side, subtitle, speakerName }) => ({
+      const seqForVideo = rawSeq.map(({ duration, side, subtitle, speakerName, speakerColor }) => ({
         duration, side,
-        subtitle:    subtitle    ?? '',
-        speakerName: showSpeakerName ? (speakerName ?? '') : '',
+        subtitle:     subtitle     ?? '',
+        speakerName:  showSpeakerName ? (speakerName  ?? '') : '',
+        speakerColor: showSpeakerName ? (speakerColor ?? '') : '',
       }))
       const resp = await fetch(`${SERVER_BASE}/export-discussion/video`, {
         method:  'POST',
