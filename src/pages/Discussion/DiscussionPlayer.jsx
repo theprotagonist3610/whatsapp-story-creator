@@ -10,7 +10,7 @@ import {
 } from '@phosphor-icons/react'
 import { getStory, getThreads, getVocalSignedUrl } from '../../lib/supabase.js'
 import {
-  isCallEligible, buildSequence, getCallerInfo,
+  isCallEligible, buildSequence, getCallerInfo, getInitials,
   fmtElapsed, estimateTotalSecs,
 } from '../../lib/callSequence.js'
 import { useDiscussionPlayer } from '../../hooks/useDiscussionPlayer.js'
@@ -51,7 +51,8 @@ export default function DiscussionPlayer() {
 
   // ── Données ──
   const [story,     setStory]     = useState(null)
-  const [caller,    setCaller]    = useState(null)
+  const [caller,    setCaller]    = useState(null)   // premier non-Dr-KA (compat)
+  const [speakers,  setSpeakers]  = useState([])     // tous les non-Dr-KA
   const [rawSeq,    setRawSeq]    = useState([])
   const [dataReady, setDataReady] = useState(false)
   const [loadErr,   setLoadErr]   = useState(null)
@@ -102,9 +103,23 @@ export default function DiscussionPlayer() {
         setStory(s)
         const callerInfo = getCallerInfo(threads ?? [])
         setCaller(callerInfo)
+
+        // Tous les personnages non-Dr-KA (dédupliqués, ordonnés)
+        const seen = new Set()
+        const allSpeakers = (threads ?? [])
+          .filter(t => t.character_name && t.character_name !== 'Dr KA')
+          .filter(t => { if (seen.has(t.character_name)) return false; seen.add(t.character_name); return true })
+          .map(t => ({
+            name:      t.character_name,
+            color:     t.character_color      ?? '#25D366',
+            initials:  getInitials(t.character_name),
+            avatarUrl: t.character_avatar_url ?? null,
+          }))
+        setSpeakers(allSpeakers)
+
         setRawSeq(buildSequence(threads ?? []).map(item => ({
           ...item,
-          speakerName: item.side === 'incoming' ? (callerInfo?.name ?? '') : '',
+          speakerName: item.characterName !== 'Dr KA' ? item.characterName : '',
         })))
         setDataReady(true)
       } catch (err) {
@@ -286,25 +301,39 @@ export default function DiscussionPlayer() {
         <div className="flex-1 flex flex-col gap-6 min-w-0">
 
           {/* Infos */}
-          {caller && (
+          {speakers.length > 0 && (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Discussion</p>
-              <div className="flex items-center gap-3">
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%',
-                  backgroundColor: caller.color,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {caller.avatarUrl
-                    ? <img src={caller.avatarUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                    : <span style={{ color: '#fff', fontWeight: 700, fontSize: 16 }}>{caller.initials}</span>
-                  }
+              {speakers.length === 1 ? (
+                <div className="flex items-center gap-3">
+                  <SpeakerAvatar speaker={speakers[0]} size={44} />
+                  <div>
+                    <p className="font-semibold text-gray-900">{speakers[0].name}</p>
+                    <p className="text-sm text-gray-500">{story?.title}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-gray-900">{caller.name}</p>
-                  <p className="text-sm text-gray-500">{story?.title}</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-gray-500 truncate">{story?.title}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {speakers.map(sp => (
+                      <div key={sp.name} className="flex items-center gap-1.5">
+                        <SpeakerAvatar speaker={sp} size={28} />
+                        <span className="text-sm font-medium text-gray-700">{sp.name}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-1.5">
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: '#d9571d',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700, color: '#fff',
+                      }}>KA</div>
+                      <span className="text-sm font-medium text-gray-700">Dr KA</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <Stat label="Notes vocales" value={sequence.length} />
                 <Stat label="Durée estimée"  value={fmtElapsed(estimateTotalSecs(sequence))} />
@@ -564,13 +593,13 @@ export default function DiscussionPlayer() {
                   <div key={i} className="flex items-start gap-2 text-sm">
                     <span
                       className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
-                      style={{ backgroundColor: item.side === 'incoming' ? (caller?.color ?? '#25D366') : '#d9571d' }}
+                      style={{ backgroundColor: item.characterName !== 'Dr KA' ? (item.characterColor ?? '#25D366') : '#d9571d' }}
                     >
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-gray-600 truncate">
-                        {item.side === 'incoming' ? caller?.name : 'Dr KA'}
+                        {item.characterName || (item.side === 'incoming' ? caller?.name : 'Dr KA')}
                       </p>
                       {item.subtitle?.trim() && (
                         <p className="text-xs text-indigo-500 truncate mt-0.5 italic">
@@ -615,13 +644,29 @@ export default function DiscussionPlayer() {
   )
 }
 
-// ─── Stat mini ────────────────────────────────────────────────────────────────
+// ─── Composants utilitaires ───────────────────────────────────────────────────
 
 function Stat({ label, value }) {
   return (
     <div className="bg-gray-50 rounded-xl p-3">
       <p className="text-xs text-gray-400">{label}</p>
       <p className="text-base font-bold text-gray-800 mt-0.5">{value}</p>
+    </div>
+  )
+}
+
+function SpeakerAvatar({ speaker, size = 44 }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      backgroundColor: speaker.color, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    }}>
+      {speaker.avatarUrl
+        ? <img src={speaker.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : <span style={{ color: '#fff', fontWeight: 700, fontSize: size * 0.36 }}>{speaker.initials}</span>
+      }
     </div>
   )
 }

@@ -546,11 +546,13 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
   const [stickerOpen,    setStickerOpen]    = useState(false)
   const [vocalUploading, setVocalUploading] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
+  const [charMenuOpen,   setCharMenuOpen]   = useState(false)
   const vocalInputRef                       = useRef()
   const photoInputRef                       = useRef()
   const taRef                               = useRef()
   const isOut                               = message.side === 'outgoing'
   const perso                               = isOut ? null : findChar(characters, message.characterId)
+  const incomingChars                       = isOut ? [] : characters.filter(c => c.nom !== 'Dr KA')
   const isSticker                           = isStickerText(message.text)
   const isVocal                             = isVocalText(message.text)
   const isPhoto                             = isPhotoText(message.text)
@@ -744,6 +746,36 @@ function MessageBubble({ message, characters, storyId, onUpdate, onDelete }) {
 
         {/* Actions groupe */}
         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {!isOut && incomingChars.length > 1 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setCharMenuOpen(o => !o) }}
+                className="p-1.5 text-gray-300 hover:text-brand-orange hover:scale-125 rounded-lg transition-all shrink-0"
+                title="Changer de personnage"
+              >
+                <UserIcon size={14} />
+              </button>
+              {charMenuOpen && (
+                <div
+                  style={{ position: 'absolute', right: '100%', top: 0, zIndex: 50, background: 'white', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', border: '1px solid #f0f0f0', padding: 4, minWidth: 120 }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {incomingChars.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { onUpdate({ characterId: c.id }); setCharMenuOpen(false) }}
+                      className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                        message.characterId === c.id ? 'bg-orange-50 text-brand-orange font-semibold' : 'text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <AvatarMini personnage={c} size={14} />
+                      {c.nom}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {!isSticker && !isVocal && !isPhoto && !isDeleted && (
             <button
               onClick={() => setStickerOpen(true)}
@@ -810,8 +842,10 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
   const [deletedMsg,  setDeletedMsg]  = useState('')
   const fileInputRef = useRef()
 
-  const perso = findChar(characters, thread.characterId)
-  const drka  = drKA(characters)
+  const [incomingCharId, setIncomingCharId] = useState(thread.characterId)
+  const incomingChars = characters.filter(c => c.nom !== 'Dr KA')
+  const selectedPerso = findChar(characters, incomingCharId) ?? findChar(characters, thread.characterId)
+  const drka          = drKA(characters)
 
   const close = () => {
     setMode(null)
@@ -823,12 +857,12 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
   }
 
   const addSimple = (side) => {
-    onAdd({ side, characterId: side === 'incoming' ? thread.characterId : null })
+    onAdd({ side, characterId: side === 'incoming' ? incomingCharId : null })
     close()
   }
 
   const submitDeleted = () => {
-    const cid = deletedSide === 'incoming' ? thread.characterId : null
+    const cid = deletedSide === 'incoming' ? incomingCharId : null
     onAddTwo(
       { side: deletedSide, characterId: cid, text: '[deleted]' },
       { side: deletedSide, characterId: cid, text: deletedMsg }
@@ -849,7 +883,7 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
       const duration = await readAudioDuration(vocalFile)
       const path     = await uploadVocalFile(storyId, vocalFile)
       const text     = vocalText(path, duration, subtitle)
-      const cid      = vocalSide === 'incoming' ? thread.characterId : null
+      const cid      = vocalSide === 'incoming' ? incomingCharId : null
       onAdd({ side: vocalSide, characterId: cid, text })
       close()
     } catch (err) {
@@ -877,14 +911,33 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
     return (
       <div className="flex justify-center items-center py-1.5">
         <div className="flex flex-col items-center gap-2 bg-white rounded-2xl shadow-md px-3 py-2.5 border border-gray-100">
+          {/* Sélecteur de personnage entrant (si plusieurs) */}
+          {incomingChars.length > 1 && (
+            <div className="flex items-center gap-1 flex-wrap justify-center">
+              {incomingChars.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setIncomingCharId(c.id)}
+                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg transition-all border ${
+                    incomingCharId === c.id
+                      ? 'bg-orange-50 text-brand-orange font-semibold border-orange-200'
+                      : 'text-gray-400 hover:text-gray-600 border-transparent'
+                  }`}
+                >
+                  <AvatarMini personnage={c} size={14} />
+                  {c.nom}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Ligne 1 : message simple */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => addSimple('incoming')}
               className="flex items-center gap-1.5 text-xs font-medium text-gray-700 hover:text-brand-orange transition-colors"
             >
-              <AvatarMini personnage={perso} size={20} />
-              {perso?.nom ?? 'Contact'}
+              <AvatarMini personnage={selectedPerso} size={20} />
+              {selectedPerso?.nom ?? 'Contact'}
             </button>
             <span className="text-gray-200 text-sm">|</span>
             <button
@@ -940,8 +993,8 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
               onClick={() => setDeletedSide('incoming')}
               className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${deletedSide === 'incoming' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
             >
-              <AvatarMini personnage={perso} size={16} />
-              {perso?.nom ?? 'Contact'}
+              <AvatarMini personnage={selectedPerso} size={16} />
+              {selectedPerso?.nom ?? 'Contact'}
             </button>
             <button
               onClick={() => setDeletedSide('outgoing')}
@@ -951,6 +1004,25 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
               <AvatarMini personnage={drka} size={16} />
             </button>
           </div>
+          {/* Sélecteur de personnage entrant (si plusieurs et côté entrant) */}
+          {deletedSide === 'incoming' && incomingChars.length > 1 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {incomingChars.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setIncomingCharId(c.id)}
+                  className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg transition-all border ${
+                    incomingCharId === c.id
+                      ? 'bg-orange-50 text-brand-orange font-semibold border-orange-200'
+                      : 'text-gray-400 hover:text-gray-600 border-transparent'
+                  }`}
+                >
+                  <AvatarMini personnage={c} size={13} />
+                  {c.nom}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Second message */}
           <input
             type="text"
@@ -989,8 +1061,8 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
             onClick={() => setVocalSide('incoming')}
             className={`flex-1 flex items-center justify-center gap-1 text-xs py-1 rounded-md transition-all ${vocalSide === 'incoming' ? 'bg-white shadow-sm text-gray-800 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
           >
-            <AvatarMini personnage={perso} size={16} />
-            {perso?.nom ?? 'Contact'}
+            <AvatarMini personnage={selectedPerso} size={16} />
+            {selectedPerso?.nom ?? 'Contact'}
           </button>
           <button
             onClick={() => setVocalSide('outgoing')}
@@ -1000,6 +1072,25 @@ function AddMessageButton({ thread, characters, storyId, onAdd, onAddTwo }) {
             <AvatarMini personnage={drka} size={16} />
           </button>
         </div>
+        {/* Sélecteur de personnage entrant (si plusieurs et côté entrant) */}
+        {vocalSide === 'incoming' && incomingChars.length > 1 && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {incomingChars.map(c => (
+              <button
+                key={c.id}
+                onClick={() => setIncomingCharId(c.id)}
+                className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg transition-all border ${
+                  incomingCharId === c.id
+                    ? 'bg-orange-50 text-brand-orange font-semibold border-orange-200'
+                    : 'text-gray-400 hover:text-gray-600 border-transparent'
+                }`}
+              >
+                <AvatarMini personnage={c} size={13} />
+                {c.nom}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Sélecteur de fichier */}
         <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileChange} />
         <button
@@ -1295,9 +1386,10 @@ export default function DesktopHistoireDetail() {
     ))
     try {
       await dbUpdateMessage(messageId, {
-        ...(patch.text   !== undefined && { text:   patch.text }),
-        ...(patch.sentAt !== undefined && { sentAt: patch.sentAt }),
-        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.text        !== undefined && { text:        patch.text }),
+        ...(patch.sentAt      !== undefined && { sentAt:      patch.sentAt }),
+        ...(patch.status      !== undefined && { status:      patch.status }),
+        ...(patch.characterId !== undefined && { characterId: patch.characterId }),
       })
     } catch (e) { setError(e.message) }
   }

@@ -263,12 +263,13 @@ export async function createMessage({ threadId, order = 0, side, characterId = n
   return data
 }
 
-export async function updateMessage(id, { text, sentAt, status, order }) {
+export async function updateMessage(id, { text, sentAt, status, order, characterId }) {
   const payload = {
-    ...(text   !== undefined && { text }),
-    ...(sentAt !== undefined && { sent_at: sentAt }),
-    ...(status !== undefined && { status }),
-    ...(order  !== undefined && { order }),
+    ...(text        !== undefined && { text }),
+    ...(sentAt      !== undefined && { sent_at: sentAt }),
+    ...(status      !== undefined && { status }),
+    ...(order       !== undefined && { order }),
+    ...(characterId !== undefined && { character_id: characterId }),
   }
   const { data, error } = await supabase
     .from('messages')

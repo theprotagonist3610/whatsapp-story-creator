@@ -58,11 +58,13 @@ export function buildSequence(threads) {
         .slice()
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map(m => ({
-          storagePath: vocalPath(m.text),
-          duration:    vocalDuration(m.text),
-          subtitle:    vocalSubtitle(m.text),   // '' si absent
-          side:        m.side,    // 'incoming' (appelant) | 'outgoing' (Dr KA)
-          blobUrl:     null,
+          storagePath:    vocalPath(m.text),
+          duration:       vocalDuration(m.text),
+          subtitle:       vocalSubtitle(m.text),
+          side:           m.side,
+          characterName:  t.character_name  ?? '',
+          characterColor: t.character_color ?? '#25D366',
+          blobUrl:        null,
         }))
     )
 }

@@ -17,7 +17,8 @@
       "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); const keys = Object.keys\\(p\\).filter\\(k => /layer|stack|frame|square|half/i.test\\(k\\)\\); console.log\\(keys.join\\('\\\\n'\\)\\)\")",
       "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); console.log\\(Object.keys\\(p\\).filter\\(k => /Layer|Stack|Intersect|Subtract|Ghost|Blend|Mask/i.test\\(k\\)\\).join\\('\\\\n'\\)\\)\")",
       "Bash(node -e \"const p = require\\('d:/lsd/whatsapp-story-creator/node_modules/@phosphor-icons/react/dist/index.cjs.js'\\); const k = Object.keys\\(p\\); console.log\\(k.length\\); console.log\\(k.slice\\(0,10\\).join\\('\\\\n'\\)\\)\")",
-      "Bash(node index.js)"
+      "Bash(node index.js)",
+      "Bash(xargs grep *)"
     ]
   }
 }

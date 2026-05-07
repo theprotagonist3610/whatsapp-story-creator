@@ -9,48 +9,59 @@ import {
   ChatTeardropDotsIcon, SpinnerIcon, ClockIcon, UserCircleIcon,
 } from '@phosphor-icons/react'
 import { getStories, getThreads } from '../../lib/supabase.js'
-import { isCallEligible, buildSequence, getCallerInfo, estimateTotalSecs, fmtElapsed } from '../../lib/callSequence.js'
-
-// ─── Avatar ────────────────────────────────────────────────────────────────────
-
-function Avatar({ name, color, avatarUrl, size = 44 }) {
-  const initials = (name ?? '')
-    .split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2) || '?'
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: '50%',
-      backgroundColor: color, flexShrink: 0,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      overflow: 'hidden',
-    }}>
-      {avatarUrl
-        ? <img src={avatarUrl} alt={initials} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : <span style={{ fontSize: size * 0.36, fontWeight: 700, color: '#fff' }}>{initials}</span>
-      }
-    </div>
-  )
-}
+import { isCallEligible, buildSequence, getInitials, estimateTotalSecs, fmtElapsed } from '../../lib/callSequence.js'
 
 // ─── Card discussion ──────────────────────────────────────────────────────────
 
 function DiscussionCard({ story, threads, onOpen }) {
-  const caller   = getCallerInfo(threads)
   const seq      = buildSequence(threads)
   const duration = estimateTotalSecs(seq)
   const count    = seq.length
   const withSubs = seq.filter(s => s.subtitle?.trim()).length
+
+  // Tous les personnages non-Dr-KA (dédupliqués)
+  const seen = new Set()
+  const speakers = threads
+    .filter(t => t.character_name && t.character_name !== 'Dr KA')
+    .filter(t => { if (seen.has(t.character_name)) return false; seen.add(t.character_name); return true })
+    .map(t => ({
+      name:      t.character_name,
+      color:     t.character_color      ?? '#25D366',
+      initials:  getInitials(t.character_name),
+      avatarUrl: t.character_avatar_url ?? null,
+    }))
+
+  const firstSpeaker = speakers[0] ?? { name: 'Inconnu', color: '#8E8E93', initials: '?', avatarUrl: null }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
       <div style={{ height: 4, background: `linear-gradient(90deg, #5856D6, #5856D688)` }} />
       <div className="p-5 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <Avatar name={caller.name} color={caller.color} avatarUrl={caller.avatarUrl} />
+          {/* Avatars empilés si plusieurs personnages */}
+          <div className="relative shrink-0" style={{ width: 44, height: 44 }}>
+            {speakers.slice(0, 3).map((sp, i) => (
+              <div key={sp.name} style={{
+                position: 'absolute',
+                left: i * 10, top: i * 0,
+                width: 44 - i * 8, height: 44 - i * 8,
+                borderRadius: '50%', border: '2px solid #fff',
+                backgroundColor: sp.color, zIndex: 3 - i,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden',
+              }}>
+                {sp.avatarUrl
+                  ? <img src={sp.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <span style={{ color: '#fff', fontWeight: 700, fontSize: (44 - i * 8) * 0.36 }}>{sp.initials}</span>
+                }
+              </div>
+            ))}
+          </div>
           <div className="min-w-0">
             <p className="font-semibold text-gray-900 truncate">{story.title}</p>
             <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
               <UserCircleIcon size={13} />
-              {caller.name}
+              {speakers.map(sp => sp.name).join(', ') || 'Inconnu'}
             </p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <span className="flex items-center gap-1 text-xs text-gray-400">
